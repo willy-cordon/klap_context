@@ -1,0 +1,16 @@
+LICENSE
+pyproject.toml
+src/klapcontext/__init__.py
+src/klapcontext/agent_context.py
+src/klapcontext/cli.py
+src/klapcontext/context_builder.py
+src/klapcontext/detector.py
+src/klapcontext/evidence.py
+src/klapcontext/git.py
+src/klapcontext/graphify.py
+src/klapcontext/portal.py
+src/klapcontext.egg-info/PKG-INFO
+src/klapcontext.egg-info/SOURCES.txt
+src/klapcontext.egg-info/dependency_links.txt
+src/klapcontext.egg-info/entry_points.txt
+src/klapcontext.egg-info/top_level.txt
