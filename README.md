@@ -2,60 +2,78 @@
 
 Make your repository understandable to humans and AI.
 
-Humans joining an unfamiliar codebase and AI coding agents have the same initial problem: they first need to understand the system. KlapContext turns a repository into reusable, local engineering context.
+KlapContext convierte un repositorio en contexto de ingeniería reutilizable: un
+portal estático para personas y un briefing compacto para agentes de IA. Usa
+[Graphify](https://github.com/Graphify-Labs/graphify) como motor local de
+análisis técnico; KlapContext no reimplementa su grafo ni sus parsers.
 
 ```text
-Repository
-    ↓
-KlapContext
-    ↓
-Engineering Context
-    ├── Human Portal
-    └── Agent Context
+Repositorio → KlapContext → Contexto de ingeniería
+                              ├── Portal humano
+                              └── Contexto para agentes
 ```
 
-KlapContext uses [Graphify](https://github.com/Graphify-Labs/graphify) as its technical graph engine. It does not replace Graphify's parser, graph, or MCP server.
-
-## Quick start
+## Instalación
 
 ```bash
-pipx install klapcontext
-pipx install graphifyy
-cd my-project
+pip install klapcontext
+```
+
+La instalación incluye `graphifyy`, la distribución oficial de Graphify que
+KlapContext necesita para generar el análisis local. Como alternativa para una
+CLI aislada: `pipx install klapcontext`.
+
+## Primer uso
+
+```bash
+cd mi-proyecto
 klap init
 klap open
 ```
 
-`klap init` writes only local, ignored outputs under `.klap/` and adds `.klap/` to `.git/info/exclude`—never `.gitignore`.
+`klap init` genera el análisis Graphify y escribe artefactos locales bajo
+`.klap/`. KlapContext agrega esa carpeta a `.git/info/exclude`; nunca modifica
+tu `.gitignore`.
 
-## Commands
+## Comandos
 
-| Command | Purpose |
+| Comando | Descripción |
 | --- | --- |
-| `klap init` | Build Graphify outputs and engineering context. |
-| `klap update` | Re-run Graphify with its incremental update flag and regenerate outputs. |
-| `klap status` | Compare generation commit and working tree with the current repository. |
-| `klap open` | Open the static human portal in the default browser. |
-| `klap agent` | Print the local Graphify MCP command/configuration. |
+| `klap init [ruta]` | Genera el contexto inicial. |
+| `klap update [ruta]` | Actualiza Graphify y el contexto. |
+| `klap status [ruta]` | Indica si el contexto está actualizado respecto a Git. |
+| `klap open [ruta]` | Abre el portal humano estático. |
+| `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
+| `klap --version` | Muestra la versión instalada. |
 
-## Outputs
+## Salidas
 
 ```text
 .klap/
-├── context.json          # versioned engineering context manifest
-├── agent-context.md      # compact context for coding agents
-├── index.html            # static human portal
-├── state.json            # freshness metadata
-└── graphify/             # copied Graphify graph/report/HTML outputs
+├── context.json          # modelo técnico, de sistema y humano
+├── agent-context.md      # briefing para agentes de IA
+├── index.html            # portal humano, sin servidor
+├── state.json            # metadatos de freshness
+└── graphify/             # grafo, informe y visualizaciones de Graphify
 ```
 
-Assertions are backed by evidence with `CONFIRMED`, `INFERRED`, or `UNKNOWN` status. Inferred architecture is guidance, not ground truth.
+Las afirmaciones incluyen evidencia y estados `CONFIRMED`, `INFERRED` o
+`UNKNOWN`. Si KlapContext no puede determinar algo con confianza, lo expone en
+lugar de inventarlo.
 
-## Development
+## Desarrollo
 
 ```bash
-python -m pip install -e .
+python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-Graphify integration is intentionally isolated in `klapcontext.graphify`, allowing unit tests to avoid running Graphify while `klap init` and `klap update` always invoke the real CLI.
+## Publicación
+
+El workflow de GitHub Actions publica tags `v*` mediante PyPI Trusted
+Publishing. Antes del primer tag, configurá el publisher de PyPI para este
+repositorio y workflow. No se necesitan tokens de PyPI en el repositorio.
+
+## Licencia
+
+Apache-2.0. Ver [LICENSE](LICENSE).
