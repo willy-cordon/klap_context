@@ -75,7 +75,7 @@ def entry_points(root: Path) -> tuple[list[dict], list[dict]]:
             background.append({"name":command,"type":"scheduled_command","schedule":frequency,"path":rel,"status":"CONFIRMED","evidence":point["evidence"]})
     # Python HTTP decorators and CLI bootstrap.
     for path in root.rglob("*.py"):
-        if any(part in {".git", ".klap", "graphify-out", "venv", ".venv"} for part in path.parts) or path.name == "system.py": continue
+        if any(part in {".git", ".klap", "graphify-out", "venv", ".venv", ".test-venv", "build", "dist"} for part in path.parts) or path.name == "system.py": continue
         text=_read(path); rel=str(path.relative_to(root))
         for method, uri, function in re.findall(r"@\w+\.(get|post|put|patch|delete)\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\n\s*(?:async\s+)?def\s+(\w+)", text, re.I):
             add("http", f"{method.upper()} {uri}", rel, function, reason="Python web route decorator")
@@ -83,7 +83,7 @@ def entry_points(root: Path) -> tuple[list[dict], list[dict]]:
             add("cli", path.stem, rel, reason="Python executable module")
     # Express route declarations.
     for path in root.rglob("*.js"):
-        if any(part in {"node_modules", ".git", ".klap", "graphify-out"} for part in path.parts): continue
+        if any(part in {"node_modules", ".git", ".klap", "graphify-out", ".test-venv", "build", "dist"} for part in path.parts): continue
         rel=str(path.relative_to(root)); text=_read(path)
         for method, uri in re.findall(r"\.(get|post|put|patch|delete)\s*\(\s*['\"]([^'\"]+)", text, re.I): add("http", f"{method.upper()} {uri}", rel, reason="JavaScript HTTP route declaration")
     return points[:50], background[:30]
@@ -95,7 +95,7 @@ def external_systems(root: Path) -> tuple[list[dict], list[dict]]:
     store_patterns = [(r"\bmysql\b", "MySQL"), (r"\bpostgres(?:ql)?\b", "PostgreSQL"), (r"\bsqlsrv\b|sql server", "SQL Server"), (r"\bsqlite\b", "SQLite"), (r"\bmongodb\b", "MongoDB")]
     candidates=[p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in {".json", ".toml", ".yml", ".yaml", ".php", ".py", ".js", ".ts", ".env"}]
     for path in candidates[:800]:
-        if any(part in {".git", ".klap", "graphify-out", "node_modules", "vendor", ".pytest_cache", "tests"} for part in path.parts) or path.name in {"system.py", "portal.py"}: continue
+        if any(part in {".git", ".klap", "graphify-out", "node_modules", "vendor", ".pytest_cache", "tests", ".test-venv", "build", "dist", "frameworks"} for part in path.parts) or path.name in {"system.py", "portal.py", "pyproject.toml"}: continue
         text=_read(path); rel=str(path.relative_to(root))
         for pattern,name,kind in patterns:
             if re.search(pattern, text, re.I) and not any(x["name"] == name for x in found): found.append({"name":name,"type":kind,"purpose":None,"used_by":[],"configuration":[rel],"status":"CONFIRMED","evidence":[_ev(rel, f"{name} configuration or usage detected")]})
@@ -116,7 +116,7 @@ def deployment(root: Path) -> tuple[dict, dict, list[dict]]:
         ports.extend(re.findall(r"(?:EXPOSE\s+|['\"]?)(\d{2,5})(?::\d{2,5})?", text))
     for path in root.rglob("*"):
         if path.is_file() and path.suffix.lower() in {".py", ".php", ".js", ".ts", ".json", ".yml", ".yaml"}:
-            if any(part in {".git", ".klap", "graphify-out", "node_modules", "vendor", ".pytest_cache", "tests"} for part in path.parts) or path.name == "system.py": continue
+            if any(part in {".git", ".klap", "graphify-out", "node_modules", "vendor", ".pytest_cache", "tests", ".test-venv", "build", "dist"} for part in path.parts) or path.name in {"system.py", "laravel.py"}: continue
             text=_read(path); rel=str(path.relative_to(root))
             for term,name in (("prometheus","Prometheus"),("opentelemetry","OpenTelemetry"),("sentry","Sentry"),("/health","Health endpoint"),("/metrics","Metrics endpoint")):
                 if term in text.lower() and not any(x["name"]==name for x in observability): observability.append({"name":name,"path":rel,"status":"CONFIRMED","evidence":[_ev(rel, f"{name} reference detected")]})

@@ -22,7 +22,7 @@ def test_detector_collects_confirmed_evidence(tmp_path):
 
 def test_context_agent_and_portal(tmp_path):
     root=fixture_repo(tmp_path); context=build(root, {"nodes":[{"name":"UserController","path":"app/Http/UserController.php","type":"controller"}]})
-    assert context["schema_version"] == "0.2" and context["architecture"]["status"] == "INFERRED"
+    assert context["schema_version"] == "0.3" and context["architecture"]["status"] == "INFERRED"
     agent=render_agent(context); page=render_portal(context, agent, ["graph.html"])
     assert "Instrucciones para el Agente" in agent and "Copiar contexto" in page and "Abrir grafo técnico" in page
 
@@ -50,4 +50,23 @@ def test_system_model_reads_docs_routes_scheduler_and_deployment(tmp_path):
     assert system["purpose"]["text"] == "Processes customer audio through a local API."
     assert any(item["type"] == "http" for item in system["entry_points"])
     assert system["background_processes"] and "Docker Compose" in system["deployment"]["tools"]
-    assert any(item["intent"] == "Entender la API HTTP" for item in system["start_here"])
+    assert any(item["intent"] == "Entender la API" for item in system["start_here"])
+
+def test_laravel_adapter_detects_surfaces_dependencies_and_flow(tmp_path):
+    root=fixture_repo(tmp_path)
+    (root/"routes"/"api.php").write_text("Route::post('/users', [UserController::class, 'store']);")
+    (root/"routes"/"console.php").write_text("Schedule::command('reports:send')->hourly();")
+    commands=root/"app"/"Console"/"Commands"; commands.mkdir(parents=True)
+    (commands/"SendReport.php").write_text("protected $signature = 'reports:send';")
+    jobs=root/"app"/"Jobs"; jobs.mkdir(parents=True)
+    (jobs/"GenerateReport.php").write_text("class GenerateReport implements ShouldQueue { public $queue = 'reports'; }")
+    controller=root/"app"/"Http"/"Controllers"; controller.mkdir(parents=True)
+    (controller/"UserController.php").write_text("class UserController { UserService $service; }")
+    context=build(root,{"nodes":[]}); system=context["system_model"]
+    assert system["routes"][0]["target"] == "UserController::store"
+    assert system["scheduled_processes"][0]["schedule"] == "hourly"
+    assert system["queue_jobs"][0]["queue"] == "reports"
+    assert any(x["package"] == "laravel/framework" for x in system["dependencies"])
+    assert system["main_flows"] and system["system_interactions"]["nodes"]
+    page=render_portal(context, render_agent(context), ["graph.html"])
+    assert "Mapa de interacción del sistema" in page and "Trazar un flujo" in page
