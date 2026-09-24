@@ -30,7 +30,10 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
         except json.JSONDecodeError: deps = {}
         for name, label in (("next", "Next.js"), ("vue", "Vue"), ("react", "React"), ("express", "Express")):
             if name in deps: add("frameworks", label, "package.json", f"{name} dependency detected")
-    if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists(): add("languages", "Python", "pyproject.toml" if (root / "pyproject.toml").exists() else "requirements.txt", "Python manifest detected")
+    if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists():
+        python_manifest = root / "pyproject.toml" if (root / "pyproject.toml").exists() else root / "requirements.txt"
+        add("languages", "Python", python_manifest.name, "Python manifest detected")
+        if "fastapi" in python_manifest.read_text(encoding="utf-8", errors="ignore").casefold(): add("frameworks", "FastAPI", python_manifest.name, "FastAPI dependency detected")
     if (root / "manage.py").exists(): add("frameworks", "Django", "manage.py", "Django entry point detected")
     if list(root.glob("*.csproj")): add("languages", "C#", next(root.glob("*.csproj")).name, ".NET project detected")
     if (root / "Dockerfile").exists(): add("infrastructure", "Docker", "Dockerfile", "Dockerfile detected")

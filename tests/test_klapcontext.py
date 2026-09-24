@@ -12,6 +12,7 @@ from klapcontext.portal import render as render_portal
 from klapcontext.providers.code_intelligence import PhpCodeIntelligenceProvider
 from klapcontext.frameworks.generic_php import GenericPhpAdapter
 from klapcontext.frameworks.laravel import LaravelAdapter
+from klapcontext.frameworks.fastapi import FastAPIAdapter
 
 
 def fixture_repo(tmp_path):
@@ -167,3 +168,12 @@ def test_laravel_adapter_emits_generic_entries_and_semantic_transitions():
     assert {"HTTP_ENTRY", "CALL", "QUEUE_DISPATCH", "EXTERNAL_CALL"} <= kinds
     flows = build(root, {"nodes": []})["flows"]
     assert any(any("OrderService::create" in step["name"] for step in flow["steps"]) for flow in flows)
+
+
+def test_fastapi_adapter_uses_the_same_generic_entry_point_model():
+    root = Path(__file__).parent / "fixtures" / "fastapi_semantic"
+    model = FastAPIAdapter().analyze(root).as_dict()
+    endpoint = model["entry_points"][0]
+    assert endpoint["type"] == "HTTP" and endpoint["method"] == "POST" and endpoint["path"] == "/orders"
+    context = build(root, {"nodes": []})
+    assert context["semantic_model"]["framework"] == "FastAPI" and context["flows"]

@@ -7,6 +7,7 @@ from pathlib import Path
 from .detector import detect_project
 from .frameworks.generic_php import GenericPhpAdapter
 from .frameworks.laravel import LaravelAdapter
+from .frameworks.fastapi import FastAPIAdapter
 from .git import commit
 from .semantic import SemanticModel
 from .system import deployment, documents, external_systems, purpose
@@ -87,6 +88,8 @@ def _semantic(root: Path, stack: dict) -> tuple[SemanticModel, dict]:
     if "Laravel" in stack["frameworks"]:
         model = LaravelAdapter().analyze(root)
         return model, model.metadata["raw"]
+    if "FastAPI" in stack["frameworks"]:
+        return FastAPIAdapter().analyze(root), _empty_raw()
     if "PHP" in stack["languages"]: return GenericPhpAdapter().analyze(root), _empty_raw()
     return SemanticModel(stack["languages"][0] if stack["languages"] else None), _empty_raw()
 
