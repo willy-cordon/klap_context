@@ -54,7 +54,7 @@ def debug_context(root: Path, task: str, *, detail: str = "standard", max_tokens
     return result
 
 
-def testing_context(root: Path, task: str, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
+def compile_test_context(root: Path, task: str, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
     result = compile_context(root, f"test {task}", detail=detail, max_tokens=max_tokens)
     result["context_type"] = "TEST"
     return result

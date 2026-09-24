@@ -14,7 +14,7 @@ from klapcontext.frameworks.generic_php import GenericPhpAdapter
 from klapcontext.frameworks.laravel import LaravelAdapter
 from klapcontext.frameworks.fastapi import FastAPIAdapter
 from klapcontext.frameworks.node import NodeAdapter
-from klapcontext.agent.compiler import change_context, compile_context, debug_context, testing_context
+from klapcontext.agent.compiler import change_context, compile_context, debug_context, compile_test_context
 from klapcontext.agent.impact import analyze_impact
 
 
@@ -207,7 +207,7 @@ def test_specialized_contexts_keep_the_compact_compiler_contract():
     root = Path(__file__).parent / "fixtures" / "laravel_semantic"
     assert change_context(root, "modificar orders")["context_type"] == "CHANGE"
     assert debug_context(root, "POST /orders 500")["context_type"] == "DEBUG"
-    assert testing_context(root, "orders")["context_type"] == "TEST"
+    assert compile_test_context(root, "orders")["context_type"] == "TEST"
 
 
 def test_impact_connects_structural_callers_with_generic_flow():
