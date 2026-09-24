@@ -32,3 +32,29 @@ def compile_context(root: Path, query: str, *, detail: str = "standard", max_tok
     result = {"intent": plan.intent, "confidence": plan.confidence, "query": query, "area": plan.area, "detail": detail, "max_tokens": max_tokens, "entry_points": entries, "flows": flows, "symbols": _rank(model["semantic_model"]["components"], terms, limit), "files": files, "dependencies": _rank(model["dependencies"], terms, limit), "tests": _rank(context["tests"], terms, limit), "read_first": read_first, "evidence": [evidence for group in entries + flows for evidence in group.get("evidence", [])][:limit], "uncertainties": model["unknowns"], "strategy": plan.strategy}
     result["estimated_tokens"] = min(max_tokens, len(json.dumps(result, ensure_ascii=False)) // 4)
     return result
+
+
+def system_context(root: Path, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
+    return compile_context(root, "understand system", detail=detail, max_tokens=max_tokens)
+
+
+def area_context(root: Path, area: str, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
+    return compile_context(root, f"understand {area}", detail=detail, max_tokens=max_tokens)
+
+
+def change_context(root: Path, task: str, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
+    result = compile_context(root, task, detail=detail, max_tokens=max_tokens)
+    result["context_type"] = "CHANGE"; result["risks"] = result["uncertainties"]
+    return result
+
+
+def debug_context(root: Path, task: str, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
+    result = compile_context(root, task, detail=detail, max_tokens=max_tokens)
+    result["context_type"] = "DEBUG"; result["investigation_points"] = result["entry_points"] + result["flows"]
+    return result
+
+
+def testing_context(root: Path, task: str, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
+    result = compile_context(root, f"test {task}", detail=detail, max_tokens=max_tokens)
+    result["context_type"] = "TEST"
+    return result

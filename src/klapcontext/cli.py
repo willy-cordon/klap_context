@@ -57,6 +57,13 @@ def cmd_agent(args):
     print("Graphify MCP (stdio):\npython -m graphify.serve " + str(graph) + "\n\nGeneric configuration:\n{\n  \"mcpServers\": {\n    \"graphify\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"graphify.serve\", \"" + str(graph).replace('\\','\\\\') + "\"]\n    }\n  }\n}")
     return 0
 
+def cmd_context(args):
+    from .agent.compiler import compile_context
+    result=compile_context(root_path(args.path), args.query, detail=args.detail, max_tokens=args.max_tokens)
+    if args.json: print(json.dumps(result, ensure_ascii=False, indent=2))
+    else: print(f"Intent: {result['intent']}\nÁrea: {result['area']}\nRead first:\n" + "\n".join(f"- {item.get('path', item.get('name'))}: {item['reason']}" for item in result['read_first']))
+    return 0
+
 def main(argv=None):
     # PowerShell's legacy cp1252 console otherwise raises on the intended status symbols.
     if hasattr(sys.stdout, "reconfigure"):
@@ -68,6 +75,7 @@ def main(argv=None):
     subs=parser.add_subparsers(dest="command", required=True)
     for name, func, help_text in (("init",cmd_init,"Generate engineering context"),("update",cmd_update,"Refresh engineering context"),("status",cmd_status,"Show context freshness"),("open",cmd_open,"Open the human portal"),("agent",cmd_agent,"Show Graphify MCP setup")):
         p=subs.add_parser(name, help=help_text); p.add_argument("path", nargs="?", help="Repository root (defaults to current directory)"); p.set_defaults(func=func)
+    p=subs.add_parser("context", help="Compile compact context for an agent task"); p.add_argument("query"); p.add_argument("path", nargs="?", default="."); p.add_argument("--detail", choices=("minimal", "standard", "deep"), default="standard"); p.add_argument("--max-tokens", type=int, default=5000); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_context)
     args=parser.parse_args(argv); return args.func(args)
 
 if __name__ == "__main__": raise SystemExit(main())
