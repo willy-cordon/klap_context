@@ -37,6 +37,14 @@ def test_detector_collects_confirmed_evidence(tmp_path):
     assert all(item.status == "CONFIRMED" for item in evidence)
 
 
+def test_detector_identifies_manifest_and_source_languages(tmp_path):
+    (tmp_path / "go.mod").write_text("module example")
+    (tmp_path / "src").mkdir(); (tmp_path / "src" / "main.ts").write_text("export {}")
+    stack, _ = detect_project(tmp_path)
+    assert {"Go", "TypeScript"} <= set(stack["languages"])
+    assert "go modules" in stack["package_managers"]
+
+
 def test_lumen_detection_and_route_adapter():
     root = Path(__file__).parent / "fixtures" / "lumen_semantic"
     stack, _ = detect_project(root)

@@ -35,6 +35,7 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
         except json.JSONDecodeError: deps = {}
         for name, label in (("next", "Next.js"), ("vue", "Vue"), ("react", "React"), ("express", "Express"), ("@nestjs/core", "NestJS")):
             if name in deps: add("frameworks", label, "package.json", f"{name} dependency detected")
+        if any(root.rglob("*.ts")) or any(root.rglob("*.tsx")): add("languages", "TypeScript", "package.json", "TypeScript source detected")
     if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists():
         python_manifest = root / "pyproject.toml" if (root / "pyproject.toml").exists() else root / "requirements.txt"
         add("languages", "Python", python_manifest.name, "Python manifest detected")
@@ -44,6 +45,17 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
     if list(root.glob("*.csproj")):
         add("languages", "C#", next(root.glob("*.csproj")).name, ".NET project detected"); stack["runtime"].append(".NET"); stack["package_managers"].append("NuGet")
         if (root / "Program.cs").exists(): add("frameworks", ".NET Web API", "Program.cs", "ASP.NET entry point detected")
+    if (root / "go.mod").exists():
+        add("languages", "Go", "go.mod", "Go module detected"); stack["runtime"].append("Go"); stack["package_managers"].append("go modules")
+    if (root / "Cargo.toml").exists():
+        add("languages", "Rust", "Cargo.toml", "Rust manifest detected"); stack["runtime"].append("Rust"); stack["package_managers"].append("cargo")
+    if (root / "pom.xml").exists() or (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
+        manifest = "pom.xml" if (root / "pom.xml").exists() else "build.gradle" if (root / "build.gradle").exists() else "build.gradle.kts"
+        add("languages", "Java", manifest, "Java build manifest detected"); stack["runtime"].append("JVM"); stack["package_managers"].append("maven" if manifest == "pom.xml" else "gradle")
+    # Keep generic analysis useful for small repositories without a manifest.
+    for suffix, language in (("*.py", "Python"), ("*.js", "JavaScript"), ("*.ts", "TypeScript"), ("*.java", "Java"), ("*.go", "Go"), ("*.rs", "Rust")):
+        if language not in stack["languages"] and any(root.rglob(suffix)):
+            first = next(root.rglob(suffix)); add("languages", language, first.relative_to(root).as_posix(), f"{language} source file detected")
     if any(name in stack["frameworks"] for name in ("Laravel", "Lumen", "FastAPI", "Express", "NestJS", ".NET Web API")): stack["project_type"] = "backend-api"
     if (root / "Dockerfile").exists(): add("infrastructure", "Docker", "Dockerfile", "Dockerfile detected")
     if list(root.glob("docker-compose*")) or list(root.glob("compose*")): add("infrastructure", "Docker Compose", "docker-compose", "Compose configuration detected")
