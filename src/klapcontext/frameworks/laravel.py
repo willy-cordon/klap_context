@@ -7,7 +7,7 @@ from pathlib import Path
 
 from ..evidence import Evidence, from_match
 from ..providers.code_intelligence import PhpCodeIntelligenceProvider
-from ..semantic import EntryPoint, ExecutionTransition, SemanticComponent, SemanticModel
+from ..semantic import BackgroundTask, Dependency, EntryPoint, Event, EventHandler, ExecutionTransition, SemanticComponent, SemanticModel
 
 
 def _read(path: Path) -> str:
@@ -180,4 +180,8 @@ class LaravelAdapter:
                 transition_type = "EXTERNAL_CALL"
             evidence = [Evidence("code", relation["file"], "Relación estructural PHP", relation["confidence"], 1.0 if relation["confidence"] == "CONFIRMED" else .7, line=relation["line"], symbol=relation["source_symbol"]).as_dict()]
             transitions.append(ExecutionTransition(relation["source_symbol"], target, transition_type, relation["file"], relation["line"], relation["confidence"], relation["provider"], evidence, relation.get("metadata", {})))
-        return SemanticModel("PHP", "Laravel", "FRAMEWORK", components, entries, transitions, raw["scheduled_processes"] + raw["queue_jobs"], {"raw": raw})
+        background = [BackgroundTask(item["name"], "SCHEDULED" if item["type"] == "scheduled_command" else "QUEUE", item.get("schedule"), item.get("name"), item["path"], item["status"], item["evidence"]) for item in raw["scheduled_processes"] + raw["queue_jobs"]]
+        events = [Event(item["name"], item["path"], item["status"], item["evidence"]) for item in raw["events"]]
+        handlers = [EventHandler(item["name"], file=item["path"], status=item["status"], evidence=item["evidence"]) for item in raw["listeners"]]
+        dependencies = [Dependency(item["package"], item["version"], item["category"], item["status"], item["evidence"]) for item in raw["dependencies"]]
+        return SemanticModel("PHP", "Laravel", "FRAMEWORK", components, entries, transitions, background_tasks=background, events=events, event_handlers=handlers, dependencies=dependencies, metadata={"raw": raw})
