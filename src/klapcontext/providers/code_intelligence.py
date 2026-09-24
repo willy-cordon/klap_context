@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 
 EXCLUDED = {".git", ".klap", "vendor", "node_modules", "build", "dist", ".venv", "venv", ".test-venv"}
-INDEX_VERSION = 3
+INDEX_VERSION = 4
 
 
 @dataclass(frozen=True)
@@ -80,7 +82,11 @@ class PhpCodeIntelligenceProvider:
         self._index: dict | None = None
 
     def _files(self) -> list[Path]:
-        return sorted(path for path in self.root.rglob("*.php") if not any(part in EXCLUDED for part in path.relative_to(self.root).parts))
+        files = []
+        for directory, children, names in os.walk(self.root):
+            children[:] = [child for child in children if child not in EXCLUDED]
+            files.extend(Path(directory) / name for name in names if name.endswith(".php"))
+        return sorted(files)
 
     def _fingerprint(self, files: list[Path]) -> str:
         value = "|".join(f"{path.relative_to(self.root)}:{path.stat().st_mtime_ns}:{path.stat().st_size}" for path in files)
@@ -133,6 +139,7 @@ class PhpCodeIntelligenceProvider:
                     for target in [part.strip() for part in _text(child, source).replace("implements", "").split(",")]:
                         relations.append(asdict(CodeRelation(qualified, target, "IMPLEMENTS", relative, _line(source, child.start_byte), "CONFIRMED")))
             properties = self._properties(declaration, source)
+            properties.update(self._constructor_properties(declaration, source))
             for method in (node for node in _descendants(declaration) if node.type == "method_declaration"):
                 method_name = _field_text(method, "name", source)
                 if not method_name:
@@ -161,6 +168,28 @@ class PhpCodeIntelligenceProvider:
                 values[variable.lstrip("$")] = type_name.split("\\")[-1]
         return values
 
+    def _constructor_properties(self, declaration, source: bytes) -> dict[str, str]:
+        """Map classic constructor injection (``$this->x = $x``) to its type.
+
+        Lumen and older Laravel applications commonly use this form instead of
+        PHP 8 property promotion.  It is deliberately conservative: only a
+        typed constructor parameter assigned directly to a ``$this`` property
+        is resolved.
+        """
+        text = _text(declaration, source)
+        constructor = re.search(r"function\s+__construct\s*\((.*?)\)\s*\{(.*?)\}", text, re.S)
+        if not constructor:
+            return {}
+        parameters = {
+            variable: type_name.split("\\")[-1]
+            for type_name, variable in re.findall(r"(?:public|protected|private)?\s*([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)\s+\$(\w+)", constructor.group(1))
+        }
+        return {
+            property_name: parameters[variable]
+            for property_name, variable in re.findall(r"\$this->(\w+)\s*=\s*\$(\w+)\s*;", constructor.group(2))
+            if variable in parameters
+        }
+
     def _calls(self, method, source: bytes, source_id: str, file: str, properties: dict[str, str]) -> list[dict]:
         relations = []
         for node in _descendants(method):
@@ -171,7 +200,9 @@ class PhpCodeIntelligenceProvider:
                 name = _field_text(node, "name", source)
                 object_node = node.child_by_field_name("object")
                 object_text = _text(object_node, source) if object_node else ""
-                if object_text.startswith("$this->"):
+                if object_text == "$this":
+                    target = f"{source_id.rsplit('::', 1)[0]}::{name}"
+                elif object_text.startswith("$this->"):
                     service = object_text.split("->", 1)[1]
                     target = f"{properties.get(service, service)}::{name}"
                 elif object_text.startswith("$"):

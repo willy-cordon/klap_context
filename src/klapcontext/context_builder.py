@@ -18,6 +18,21 @@ def _nodes(graph: dict) -> list[dict]:
     return graph.get("nodes", []) if isinstance(graph.get("nodes"), list) else graph.get("graph", {}).get("nodes", [])
 
 
+def _edges(graph: dict) -> list[dict]:
+    """Graphify has emitted both `edges` and `links` across supported versions."""
+    for key in ("edges", "links"):
+        value = graph.get(key)
+        if isinstance(value, list):
+            return value
+    nested = graph.get("graph", {})
+    if isinstance(nested, dict):
+        for key in ("edges", "links"):
+            value = nested.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
 def _modules(nodes: list[dict]) -> list[dict]:
     return [{"name": item.get("label") or item.get("name") or item.get("id"), "path": item.get("file") or item.get("path"), "kind": item.get("type", "module"), "description": None, "status": "CONFIRMED", "evidence": []} for item in nodes if (item.get("label") or item.get("name") or item.get("id")) and (item.get("file") or item.get("path"))][:100]
 
@@ -55,7 +70,14 @@ def _flows(model: dict) -> list[dict]:
         seen = {entry["name"], current}
         for _ in range(4):
             candidates = outgoing.get(current, []) or [item for source, values in outgoing.items() if source.endswith(current) for item in values]
-            edge = next((item for item in candidates if item["target"] not in seen), None)
+            candidates = [item for item in candidates if item["target"] not in seen]
+            current_class = current.rsplit("::", 1)[0].split("\\")[-1]
+            # A same-class call (for example a controller/service delegating to
+            # another method) is usually the main continuation of an HTTP flow.
+            # Preserve the other calls in the semantic model instead of guessing
+            # that they occur after it.
+            edge = next((item for item in candidates if item["target"].rsplit("::", 1)[0].split("\\")[-1] == current_class), None)
+            edge = edge or next(iter(candidates), None)
             if not edge: break
             target = edge["target"]; component = components.get(target, {})
             steps.append({"name": target, "kind": edge["type"].casefold(), "path": component.get("file") or edge.get("file"), "status": edge["status"]})
@@ -116,6 +138,6 @@ def build(root: Path, graph: dict) -> dict:
     tests = [{"path": item, "reason": "Tests detectados"} for item in ("tests", "test", "phpunit.xml", "pytest.ini") if (root / item).exists()]
     story = " ".join(item for item in (value["text"], runtime["description"], "La aplicación está contenerizada con Docker." if "Docker" in deploy["tools"] else None) if item)
     system = {"purpose": value, "project_story": {"text": story or None, "status": "CONFIRMED" if story else "UNKNOWN"}, "runtime": runtime, "framework": raw["framework"], "runtime_surfaces": raw["runtime_surfaces"], "routes": raw["routes"], "commands": raw["commands"], "scheduled_processes": raw["scheduled_processes"], "queue_jobs": raw["queue_jobs"], "events": raw["events"], "listeners": raw["listeners"], "components": raw["components"], "dependencies": raw["dependencies"], "semantic_model": model, "entry_points": points, "main_flows": flows, "system_interactions": _interactions(flows, systems, stores), "capabilities": _modules(_nodes(graph)), "inputs": inputs, "outputs": outputs, "external_systems": systems, "background_processes": background, "datastores": stores, "deployment": deploy, "observability": observability, "important_files": important, "start_here": [], "unknowns": [item for item, found in (("Propósito de negocio del proyecto", value["text"]), ("Plataforma de despliegue en producción", deploy["tools"])) if not found]}
-    technical = {"languages": stack["languages"], "frameworks": stack["frameworks"], "framework": raw["framework"], "dependencies": raw["dependencies"], "graph": {"nodes": len(_nodes(graph)), "edges": len(graph.get("edges", graph.get("graph", {}).get("edges", [])))}, "documents": [{"path": item["path"]} for item in docs], "tests": tests, "infrastructure": stack["infrastructure"]}
+    technical = {"languages": stack["languages"], "frameworks": stack["frameworks"], "framework": raw["framework"], "dependencies": raw["dependencies"], "graph": {"nodes": len(_nodes(graph)), "edges": len(_edges(graph))}, "documents": [{"path": item["path"]} for item in docs], "tests": tests, "infrastructure": stack["infrastructure"]}
     project = {"name": root.name, "type": stack["frameworks"][0] if stack["frameworks"] else None, "root": str(root.resolve()), "generated_at": datetime.now(timezone.utc).isoformat(), "git_commit": commit(root)}
     return {"schema_version": "0.5", "project": project, "technical_model": technical, "system_model": system, "semantic_model": model, "human_context": {"purpose": None, "users": None, "important_processes": [], "notes": []}, "stack": stack, "architecture": {"style": "MVC" if "Laravel" in stack["frameworks"] else None, "status": "INFERRED" if "Laravel" in stack["frameworks"] else "UNKNOWN", "confidence": None, "evidence": []}, "entry_points": points, "modules": system["capabilities"], "flows": flows, "api": raw["routes"], "jobs": background, "datastores": stores, "external_systems": systems, "deployment": deploy, "observability": observability, "tests": tests, "evidence": [item.as_dict() for item in detector_evidence] + value["evidence"] + _analysis_evidence(raw)}

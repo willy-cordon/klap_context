@@ -1,9 +1,22 @@
 from __future__ import annotations
 
 import json
+import fnmatch
+import os
 from pathlib import Path
 
 from .evidence import Evidence
+
+
+EXCLUDED = {".git", ".klap", "graphify-out", "node_modules", "vendor", ".venv", "venv", ".test-venv", "build", "dist"}
+
+
+def _sources(root: Path, pattern: str):
+    for directory, children, names in os.walk(root):
+        children[:] = [child for child in children if child not in EXCLUDED]
+        for name in names:
+            if fnmatch.fnmatch(name, pattern):
+                yield Path(directory) / name
 
 
 def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
@@ -22,10 +35,10 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
         if "laravel/lumen-framework" in deps:
             add("frameworks", "Lumen", "composer.json", "laravel/lumen-framework dependency detected")
             stack["project_type"] = "backend-api"
-    elif any(root.rglob("*.php")):
+    elif any(_sources(root, "*.php")):
         # A standalone PHP repository has no Composer manifest to identify it,
         # but language analysis can still provide a useful generic model.
-        first_php = next(root.rglob("*.php"))
+        first_php = next(_sources(root, "*.php"))
         add("languages", "PHP", str(first_php.relative_to(root)).replace("\\", "/"), "PHP source file detected")
     package = root / "package.json"
     if package.exists():
@@ -35,7 +48,7 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
         except json.JSONDecodeError: deps = {}
         for name, label in (("next", "Next.js"), ("vue", "Vue"), ("react", "React"), ("express", "Express"), ("@nestjs/core", "NestJS")):
             if name in deps: add("frameworks", label, "package.json", f"{name} dependency detected")
-        if any(root.rglob("*.ts")) or any(root.rglob("*.tsx")): add("languages", "TypeScript", "package.json", "TypeScript source detected")
+        if any(_sources(root, "*.ts")) or any(_sources(root, "*.tsx")): add("languages", "TypeScript", "package.json", "TypeScript source detected")
     if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists():
         python_manifest = root / "pyproject.toml" if (root / "pyproject.toml").exists() else root / "requirements.txt"
         add("languages", "Python", python_manifest.name, "Python manifest detected")
@@ -54,8 +67,8 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
         add("languages", "Java", manifest, "Java build manifest detected"); stack["runtime"].append("JVM"); stack["package_managers"].append("maven" if manifest == "pom.xml" else "gradle")
     # Keep generic analysis useful for small repositories without a manifest.
     for suffix, language in (("*.py", "Python"), ("*.js", "JavaScript"), ("*.ts", "TypeScript"), ("*.java", "Java"), ("*.go", "Go"), ("*.rs", "Rust")):
-        if language not in stack["languages"] and any(root.rglob(suffix)):
-            first = next(root.rglob(suffix)); add("languages", language, first.relative_to(root).as_posix(), f"{language} source file detected")
+        if language not in stack["languages"] and any(_sources(root, suffix)):
+            first = next(_sources(root, suffix)); add("languages", language, first.relative_to(root).as_posix(), f"{language} source file detected")
     if any(name in stack["frameworks"] for name in ("Laravel", "Lumen", "FastAPI", "Express", "NestJS", ".NET Web API")): stack["project_type"] = "backend-api"
     if (root / "Dockerfile").exists(): add("infrastructure", "Docker", "Dockerfile", "Dockerfile detected")
     if list(root.glob("docker-compose*")) or list(root.glob("compose*")): add("infrastructure", "Docker Compose", "docker-compose", "Compose configuration detected")
@@ -66,8 +79,8 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
 def detect_components(root: Path) -> list[dict]:
     """Find independent project boundaries without assuming a monorepo layout."""
     result = []
-    for manifest in [*root.rglob("composer.json"), *root.rglob("package.json"), *root.rglob("pyproject.toml"), *root.rglob("requirements.txt")]:
-        if any(part in {".git", ".klap", "node_modules", "vendor", ".venv", "venv"} for part in manifest.relative_to(root).parts): continue
+    manifests = [path for pattern in ("composer.json", "package.json", "pyproject.toml", "requirements.txt") for path in _sources(root, pattern)]
+    for manifest in manifests:
         directory = manifest.parent
         if directory == root: continue
         stack, _ = detect_project(directory)

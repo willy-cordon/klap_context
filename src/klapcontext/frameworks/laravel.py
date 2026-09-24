@@ -28,7 +28,7 @@ def _e(root: Path, path: Path, offset: int, reason: str, *, symbol: str | None =
 
 def _category(package: str) -> str:
     package = package.lower()
-    if package == "laravel/framework": return "framework"
+    if package in {"laravel/framework", "laravel/lumen-framework"}: return "framework"
     if any(token in package for token in ("mysql", "postgres", "mongodb", "redis", "doctrine/dbal")): return "database"
     if any(token in package for token in ("queue", "horizon", "rabbit", "kafka")): return "queue"
     if any(token in package for token in ("jwt", "sanctum", "passport", "auth")): return "authentication"
@@ -42,18 +42,43 @@ def _category(package: str) -> str:
 def _composer(root: Path) -> tuple[list[dict], dict]:
     composer = root / "composer.json"
     if not composer.exists():
-        return [], {"laravel": None, "php": None}
+        return [], {"framework": None, "package": None, "version": None, "php": None}
     try:
         data = json.loads(_read(composer))
     except json.JSONDecodeError:
-        return [], {"laravel": None, "php": None}
+        return [], {"framework": None, "package": None, "version": None, "php": None}
     dependencies = []
     for scope, key in (("runtime", "require"), ("development", "require-dev")):
         for package, version in data.get(key, {}).items():
             evidence = Evidence("manifest", "composer.json", f"Dependencia Composer ({scope})", "CONFIRMED", 1.0, symbol=package).as_dict()
             dependencies.append({"package": package, "version": version, "scope": scope, "category": _category(package), "status": "CONFIRMED", "evidence": [evidence]})
     requirements = data.get("require", {})
-    return dependencies, {"laravel": requirements.get("laravel/framework"), "php": requirements.get("php")}
+    package = "laravel/lumen-framework" if "laravel/lumen-framework" in requirements else "laravel/framework" if "laravel/framework" in requirements else None
+    return dependencies, {"framework": "Lumen" if package == "laravel/lumen-framework" else "Laravel" if package else None, "package": package, "version": requirements.get(package) if package else None, "php": requirements.get("php")}
+
+
+def _group_spans(text: str) -> list[tuple[int, int, str, list[str]]]:
+    """Return Lumen/Laravel route-group bodies with their inherited metadata."""
+    pattern = re.compile(r"(?:\$router|\$app|Route)->group\s*\(\s*\[(.*?)\]\s*,\s*function\s*\([^)]*\)\s*(?:use\s*\([^)]*\)\s*)?\{", re.S)
+    groups = []
+    for match in pattern.finditer(text):
+        opening = match.end() - 1
+        depth, closing = 0, None
+        for index in range(opening, len(text)):
+            if text[index] == "{": depth += 1
+            elif text[index] == "}":
+                depth -= 1
+                if depth == 0:
+                    closing = index
+                    break
+        if closing is None:
+            continue
+        options = match.group(1)
+        prefix_match = re.search(r"['\"]prefix['\"]\s*=>\s*['\"]([^'\"]*)['\"]", options)
+        middleware_match = re.search(r"['\"]middleware['\"]\s*=>\s*(\[[^\]]*\]|['\"][^'\"]*['\"])", options, re.S)
+        middleware = re.findall(r"['\"]([^'\"]+)['\"]", middleware_match.group(1)) if middleware_match else []
+        groups.append((opening, closing, prefix_match.group(1) if prefix_match else "", middleware))
+    return groups
 
 
 def _routes(root: Path) -> tuple[list[dict], list[dict]]:
@@ -66,14 +91,20 @@ def _routes(root: Path) -> tuple[list[dict], list[dict]]:
     schedule_pattern = re.compile(r"Schedule::(?:command|job)\s*\(\s*['\"]([^'\"]+)['\"]\s*\).*?->([A-Za-z]\w*)\s*\(", re.S)
     for file in directory.glob("*.php"):
         text = _read(file)
+        groups = _group_spans(text)
         for match in route_pattern.finditer(text):
             method, uri, target = match.groups()
             handler = _symbol(target)
             if not handler:
                 callback = re.search(r"['\"]([A-Za-z_]\w*)@([A-Za-z_]\w*)['\"]", target)
                 handler = f"{callback.group(1)}::{callback.group(2)}" if callback else None
-            name = f"{method.upper()} /{uri.lstrip('/')}"
-            routes.append({"type": "http", "method": method.upper(), "uri": "/" + uri.lstrip("/"), "name": name, "path": str(file.relative_to(root)), "source": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "target": handler, "handler": handler, "middleware": [], "status": "CONFIRMED", "evidence": _e(root, file, match.start(), "Declaración de ruta Laravel", symbol=name)})
+            active = [group for group in groups if group[0] < match.start() < group[1]]
+            prefix = "/".join(group[2].strip("/") for group in active if group[2])
+            middleware = [name for group in active for name in group[3]]
+            full_uri = "/" + "/".join(part for part in (prefix, uri.strip("/")) if part)
+            name = f"{method.upper()} {full_uri}"
+            framework = "Lumen" if "lumen-framework" in _read(root / "composer.json") else "Laravel"
+            routes.append({"type": "http", "method": method.upper(), "uri": full_uri, "name": name, "path": str(file.relative_to(root)), "source": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "target": handler, "handler": handler, "middleware": middleware, "status": "CONFIRMED", "evidence": _e(root, file, match.start(), f"Declaración de ruta {framework}", symbol=name)})
         for match in resource_pattern.finditer(text):
             resource, controller = match.groups()
             name = f"RESOURCE /{resource.lstrip('/')}"
@@ -140,7 +171,9 @@ def analyze(root: Path) -> dict:
     for kind, label, values in (("http", "HTTP", routes), ("cli", "CLI", commands), ("scheduler", "Scheduler", scheduled), ("queue", "Queue", jobs), ("event", "Eventos", events), ("listener", "Listeners", listeners)):
         if values:
             surfaces.append({"type": kind, "label": label, "count": len(values), "items": values})
-    return {"framework": {"name": "Laravel", "version": versions["laravel"], "php_version": versions["php"], "status": "CONFIRMED", "evidence": [Evidence("manifest", "composer.json", "laravel/framework declarado", "CONFIRMED", 1.0, symbol="laravel/framework").as_dict()]}, "routes": routes, "commands": commands, "scheduled_processes": scheduled, "queue_jobs": jobs, "events": events, "listeners": listeners, "components": components, "dependencies": dependencies, "runtime_surfaces": surfaces, "important_files": important}
+    framework = versions["framework"] or "Laravel"
+    package = versions["package"] or "laravel/framework"
+    return {"framework": {"name": framework, "version": versions["version"], "php_version": versions["php"], "status": "CONFIRMED", "evidence": [Evidence("manifest", "composer.json", f"{package} declarado", "CONFIRMED", 1.0, symbol=package).as_dict()]}, "routes": routes, "commands": commands, "scheduled_processes": scheduled, "queue_jobs": jobs, "events": events, "listeners": listeners, "components": components, "dependencies": dependencies, "runtime_surfaces": surfaces, "important_files": important}
 
 
 class LaravelAdapter:
@@ -157,7 +190,7 @@ class LaravelAdapter:
         entries = []
         transitions = []
         for route in raw["routes"]:
-            entries.append(EntryPoint("HTTP", route["name"], route.get("target"), "HTTP", route.get("method"), route.get("uri"), route["path"], route["line"], "Laravel", route["status"], route["evidence"]))
+            entries.append(EntryPoint("HTTP", route["name"], route.get("target"), "HTTP", route.get("method"), route.get("uri"), route["path"], route["line"], raw["framework"]["name"], route["status"], route["evidence"]))
             if route.get("target"):
                 transitions.append(ExecutionTransition(route["name"], route["target"], "HTTP_ENTRY", route["path"], route["line"], route["status"], "laravel", route["evidence"]))
         for command in raw["commands"]:
@@ -187,4 +220,4 @@ class LaravelAdapter:
         events = [Event(item["name"], item["path"], item["status"], item["evidence"]) for item in raw["events"]]
         handlers = [EventHandler(item["name"], file=item["path"], status=item["status"], evidence=item["evidence"]) for item in raw["listeners"]]
         dependencies = [Dependency(item["package"], item["version"], item["category"], item["status"], item["evidence"]) for item in raw["dependencies"]]
-        return SemanticModel("PHP", "Laravel", "FRAMEWORK", components, entries, transitions, background_tasks=background, events=events, event_handlers=handlers, dependencies=dependencies, metadata={"raw": raw})
+        return SemanticModel("PHP", raw["framework"]["name"], "FRAMEWORK", components, entries, transitions, background_tasks=background, events=events, event_handlers=handlers, dependencies=dependencies, metadata={"raw": raw})

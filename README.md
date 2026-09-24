@@ -57,6 +57,7 @@ tu `.gitignore`.
 | `klap status [ruta]` | Indica si el contexto está actualizado respecto a Git. |
 | `klap open [ruta]` | Abre el portal humano estático. |
 | `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
+| `klap context "tarea" [ruta]` | Compila un contexto focalizado reutilizando `.klap/context.json` si existe. |
 | `klap --version` | Muestra la versión instalada. |
 
 ## Salidas
@@ -86,6 +87,9 @@ python -m pytest
 El workflow de GitHub Actions publica tags `v*` mediante PyPI Trusted
 Publishing. Antes del primer tag, configurá el publisher de PyPI para este
 repositorio y workflow. No se necesitan tokens de PyPI en el repositorio.
+
+El repositorio ya incluye `.github/workflows/publish-pypi.yml`: al publicar un
+tag `vX.Y.Z`, GitHub construye el paquete y lo publica con ese publisher.
 
 ## Licencia
 

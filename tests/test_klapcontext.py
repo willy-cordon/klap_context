@@ -50,7 +50,16 @@ def test_lumen_detection_and_route_adapter():
     stack, _ = detect_project(root)
     assert "Lumen" in stack["frameworks"]
     context = build(root, {"nodes": []})
-    assert context["system_model"]["routes"][0]["name"] == "POST /api/v1/call-vtex"
+    route = context["system_model"]["routes"][0]
+    assert route["name"] == "POST /api/v1/call-vtex"
+    assert route["middleware"] == ["apikey"]
+    assert context["system_model"]["framework"]["name"] == "Lumen"
+    flow = context["system_model"]["main_flows"][0]
+    assert [step["name"].split("\\")[-1] for step in flow["steps"]] == [
+        "POST /api/v1/call-vtex", "ProcessRequestController::callVtex",
+        "ProcessRequestService::validateRequest", "ProcessRequestService::callVtex",
+        "VtexService::searchOrderVtex", "VtexService::getOrderDetails",
+    ]
 
 
 def test_portal_has_dashboard_and_real_views(tmp_path):
@@ -221,6 +230,21 @@ def test_context_compiler_ranks_compact_task_context():
     assert minimal["intent"] == "CHANGE" and minimal["estimated_tokens"] <= 400
     assert len(minimal["read_first"]) <= len(deep["read_first"])
     assert minimal["execution"]["adaptive"] and minimal["execution"]["files_selected"] <= deep["execution"]["files_selected"]
+
+
+def test_context_compiler_reuses_generated_context(tmp_path, monkeypatch):
+    root = fixture_repo(tmp_path)
+    (root / ".klap").mkdir()
+    cached = build(root, {"nodes": []})
+    (root / ".klap" / "context.json").write_text(json.dumps(cached))
+    monkeypatch.setattr("klapcontext.agent.compiler.build", lambda *_: (_ for _ in ()).throw(AssertionError("should not rebuild")))
+    result = compile_context(root, "entender sistema")
+    assert result["execution"]["context_source"] == "cached"
+
+
+def test_graph_links_are_counted_like_edges(tmp_path):
+    context = build(fixture_repo(tmp_path), {"nodes": [], "links": [{"source": "a", "target": "b"}]})
+    assert context["technical_model"]["graph"]["edges"] == 1
 
 
 def test_specialized_contexts_keep_the_compact_compiler_contract():
