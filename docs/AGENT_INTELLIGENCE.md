@@ -71,3 +71,10 @@ salida a agentes y scripts.
 `agent/impact.py` combina callers estructurales con flows, entry points,
 tests, configuración e integraciones. Sus resultados dicen
 “potencialmente afectados” y conservan incertidumbres: no predicen roturas.
+
+## Sprint 11 y 12
+
+`prepare_change` y `verify_change` cierran el workflow Understand → Change →
+Verify con evidencia, Git y tests relacionados. El portal conserva la vista
+de comprensión del sistema, navegación progresiva y Graphify como herramienta
+de profundización; la UI no reemplaza el modelo semántico.
