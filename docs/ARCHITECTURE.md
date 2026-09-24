@@ -32,6 +32,10 @@ Repositorio → detección de proyecto → inteligencia de lenguaje
   `EXTERNAL_CALL`.
 - `frameworks/generic_php.py` conserva símbolos, llamadas y un entry point
   heurístico `main()` aun cuando no existe framework reconocido.
+- `frameworks/fastapi.py` y `frameworks/node.py` agregan rutas FastAPI,
+  Express y NestJS sin cambiar el consumidor del modelo semántico.
+- `detector.detect_components()` identifica boundaries con manifests en
+  subdirectorios para representar monorepos de manera conservadora.
 
 `context_builder.py` reconstruye flujos exclusivamente desde el
 `SemanticModel`. Agregar un adapter futuro (por ejemplo FastAPI) no debe exigir

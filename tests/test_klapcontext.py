@@ -6,13 +6,14 @@ from klapcontext.agent.capabilities import Capability, CapabilityRouter, default
 from klapcontext.agent.planner import ContextPlanner
 from klapcontext.agent_context import render as render_agent
 from klapcontext.context_builder import build
-from klapcontext.detector import detect_project
+from klapcontext.detector import detect_components, detect_project
 from klapcontext.git import exclude_klap
 from klapcontext.portal import render as render_portal
 from klapcontext.providers.code_intelligence import PhpCodeIntelligenceProvider
 from klapcontext.frameworks.generic_php import GenericPhpAdapter
 from klapcontext.frameworks.laravel import LaravelAdapter
 from klapcontext.frameworks.fastapi import FastAPIAdapter
+from klapcontext.frameworks.node import NodeAdapter
 
 
 def fixture_repo(tmp_path):
@@ -177,3 +178,16 @@ def test_fastapi_adapter_uses_the_same_generic_entry_point_model():
     assert endpoint["type"] == "HTTP" and endpoint["method"] == "POST" and endpoint["path"] == "/orders"
     context = build(root, {"nodes": []})
     assert context["semantic_model"]["framework"] == "FastAPI" and context["flows"]
+
+
+def test_express_adapter_emits_generic_http_entry_point():
+    root = Path(__file__).parent / "fixtures" / "express_semantic"
+    model = NodeAdapter("Express").analyze(root).as_dict()
+    assert model["entry_points"][0]["name"] == "POST /orders"
+    assert build(root, {"nodes": []})["semantic_model"]["framework"] == "Express"
+
+
+def test_detect_components_finds_multiple_subprojects():
+    root = Path(__file__).parent / "fixtures" / "monorepo"
+    components = detect_components(root)
+    assert {item["path"] for item in components} == {"backend", "frontend"}

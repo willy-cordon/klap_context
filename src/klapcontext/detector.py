@@ -28,7 +28,7 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
         add("languages", "JavaScript", "package.json", "npm manifest detected")
         try: deps = {**json.loads(package.read_text(encoding="utf-8")).get("dependencies", {}), **json.loads(package.read_text(encoding="utf-8")).get("devDependencies", {})}
         except json.JSONDecodeError: deps = {}
-        for name, label in (("next", "Next.js"), ("vue", "Vue"), ("react", "React"), ("express", "Express")):
+        for name, label in (("next", "Next.js"), ("vue", "Vue"), ("react", "React"), ("express", "Express"), ("@nestjs/core", "NestJS")):
             if name in deps: add("frameworks", label, "package.json", f"{name} dependency detected")
     if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists():
         python_manifest = root / "pyproject.toml" if (root / "pyproject.toml").exists() else root / "requirements.txt"
@@ -40,3 +40,15 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
     if list(root.glob("docker-compose*")) or list(root.glob("compose*")): add("infrastructure", "Docker Compose", "docker-compose", "Compose configuration detected")
     if (root / ".github" / "workflows").exists(): add("infrastructure", "GitHub Actions", ".github/workflows", "GitHub Actions workflows detected")
     return stack, evidence
+
+
+def detect_components(root: Path) -> list[dict]:
+    """Find independent project boundaries without assuming a monorepo layout."""
+    result = []
+    for manifest in [*root.rglob("composer.json"), *root.rglob("package.json"), *root.rglob("pyproject.toml"), *root.rglob("requirements.txt")]:
+        if any(part in {".git", ".klap", "node_modules", "vendor", ".venv", "venv"} for part in manifest.relative_to(root).parts): continue
+        directory = manifest.parent
+        if directory == root: continue
+        stack, _ = detect_project(directory)
+        result.append({"name": directory.name, "path": directory.relative_to(root).as_posix(), "languages": stack["languages"], "frameworks": stack["frameworks"], "manifest": manifest.name, "status": "CONFIRMED"})
+    return result

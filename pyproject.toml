@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{name = "Willy Cordon"}]
 keywords = ["codebase", "developer-tools", "engineering-context", "graphify", "ai-agents"]
 classifiers = ["Development Status :: 3 - Alpha", "Intended Audience :: Developers", "Operating System :: OS Independent", "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only", "Programming Language :: Python :: 3.10", "Programming Language :: Python :: 3.11", "Programming Language :: Python :: 3.12", "Topic :: Software Development :: Documentation"]
-dependencies = ["graphifyy>=0.9.66", "tree-sitter>=0.24,<0.26", "tree-sitter-php>=0.24,<0.25"]
+dependencies = ["graphifyy>=0.9.66", "tree-sitter>=0.24,<0.26", "tree-sitter-php>=0.24,<0.25", "tree-sitter-javascript>=0.23,<0.26", "tree-sitter-typescript>=0.23,<0.26"]
 
 [project.optional-dependencies]
 dev = ["build>=1.2", "pytest>=8", "twine>=6"]

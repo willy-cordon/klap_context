@@ -4,10 +4,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .detector import detect_project
+from .detector import detect_components, detect_project
 from .frameworks.generic_php import GenericPhpAdapter
 from .frameworks.laravel import LaravelAdapter
 from .frameworks.fastapi import FastAPIAdapter
+from .frameworks.node import NodeAdapter
 from .git import commit
 from .semantic import SemanticModel
 from .system import deployment, documents, external_systems, purpose
@@ -90,6 +91,8 @@ def _semantic(root: Path, stack: dict) -> tuple[SemanticModel, dict]:
         return model, model.metadata["raw"]
     if "FastAPI" in stack["frameworks"]:
         return FastAPIAdapter().analyze(root), _empty_raw()
+    for framework in ("Express", "NestJS"):
+        if framework in stack["frameworks"]: return NodeAdapter(framework).analyze(root), _empty_raw()
     if "PHP" in stack["languages"]: return GenericPhpAdapter().analyze(root), _empty_raw()
     return SemanticModel(stack["languages"][0] if stack["languages"] else None), _empty_raw()
 
@@ -107,7 +110,7 @@ def _analysis_evidence(raw: dict) -> list[dict]:
 def build(root: Path, graph: dict) -> dict:
     stack, detector_evidence = detect_project(root)
     docs = documents(root); value = purpose(root, docs); systems, stores = external_systems(root); deploy, observability, _ = deployment(root)
-    semantic, raw = _semantic(root, stack); model = semantic.as_dict(); points, background = model["entry_points"], model["background_tasks"]
+    semantic, raw = _semantic(root, stack); model = semantic.as_dict(); model["project_components"] = detect_components(root); points, background = model["entry_points"], model["background_tasks"]
     runtime = _runtime(points, background, stack["frameworks"]); inputs, outputs = _io(points, systems, stores); flows = _flows(model)
     important = raw["important_files"] or ([{"path": "README.md", "role": "Documentación", "reason": "README detectado"}] if (root / "README.md").exists() else [])
     tests = [{"path": item, "reason": "Tests detectados"} for item in ("tests", "test", "phpunit.xml", "pytest.ini") if (root / item).exists()]
