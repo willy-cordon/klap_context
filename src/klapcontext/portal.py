@@ -69,10 +69,16 @@ def render(context: dict, agent_text: str, graphify_files: list[str]) -> str:
     evidence = context.get("evidence", [])
     surfaces = system.get("runtime_surfaces", [])
     unknowns = system.get("unknowns", [])
+    framework = system.get("framework") or {}
     purpose = system.get("purpose", {}).get("text") or "No pudimos determinar el propósito con suficiente confianza."
     story = system.get("project_story", {}).get("text") or system.get("runtime", {}).get("description") or "Todavía no hay una narrativa técnica verificable."
     state = "ACTUAL" if project.get("git_commit") else "SIN COMMIT"
-    tags = "".join(f"<span>{e(item)}</span>" for item in stack[:6]) or "<span>Stack no identificado</span>"
+    tags = "".join(f"<span>{e(item)}</span>" for item in stack[:6])
+    if framework.get("version"):
+        tags += f"<span>{e(framework.get('name', 'Framework'))} {e(framework['version'])}</span>"
+    if framework.get("php_version"):
+        tags += f"<span>PHP {e(framework['php_version'])}</span>"
+    tags = tags or "<span>Stack no identificado</span>"
     surface_cards = "".join(
         f"<article class='surface'><b>{e(item.get('count', 0))}</b><span>{e(item.get('label', 'superficies'))}</span></article>"
         for item in surfaces

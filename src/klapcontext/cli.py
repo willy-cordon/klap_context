@@ -6,18 +6,20 @@ from . import __version__
 from .agent_context import write as write_agent
 from .context_builder import build
 from .git import commit, dirty_files, exclude_klap, is_repository
-from .graphify import GraphifyError, copy_outputs, generate, load_graph, version
+from .graphify import GraphifyError
 from .portal import write as write_portal
+from .providers import default_provider
 
 def root_path(value: str | None) -> Path: return Path(value or os.getcwd()).resolve()
 
 def generate_all(root: Path, update: bool=False) -> dict:
     if not is_repository(root): raise RuntimeError(f"Not a Git repository: {root}")
     exclude_klap(root); klap=root/".klap"; klap.mkdir(exist_ok=True)
-    graph_path=generate(root, update); files=copy_outputs(root, klap/"graphify")
-    context=build(root, load_graph(graph_path)); (klap/"context.json").write_text(json.dumps(context, indent=2)+"\n", encoding="utf-8")
+    provider=default_provider()
+    graph_path=provider.generate(root, update); files=provider.copy_outputs(root, klap/"graphify")
+    context=build(root, provider.load_graph(graph_path)); (klap/"context.json").write_text(json.dumps(context, indent=2)+"\n", encoding="utf-8")
     agent=write_agent(context, klap/"agent-context.md"); write_portal(context, agent, files, klap/"index.html")
-    state={"schema_version":"0.1","generated_at":datetime.now(timezone.utc).isoformat(),"git_commit":commit(root),"graphify_version":version(),"klap_version":__version__}
+    state={"schema_version":"0.2","generated_at":datetime.now(timezone.utc).isoformat(),"git_commit":commit(root),"provider":{"name":provider.name,"version":provider.version()},"klap_version":__version__}
     (klap/"state.json").write_text(json.dumps(state, indent=2)+"\n", encoding="utf-8")
     return context
 

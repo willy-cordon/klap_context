@@ -66,3 +66,24 @@ def test_laravel_adapter_detects_flow_and_map(tmp_path):
     assert system["scheduled_processes"][0]["schedule"] == "hourly"
     assert system["queue_jobs"][0]["queue"] == "reports"
     assert system["main_flows"] and system["system_interactions"]["nodes"]
+
+
+def test_laravel_analysis_includes_versions_components_and_navigable_evidence(tmp_path):
+    root = fixture_repo(tmp_path)
+    (root / "composer.json").write_text(json.dumps({"require": {"php": "^8.2", "laravel/framework": "^11.0", "guzzlehttp/guzzle": "^7.0", "laravel/sanctum": "^4.0"}, "require-dev": {"pestphp/pest": "^3.0"}}))
+    (root / "routes" / "api.php").write_text("<?php\nRoute::post('/orders', [OrderController::class, 'store']);\n")
+    for folder, name in (("app/Http/Controllers", "OrderController"), ("app/Services", "OrderService"), ("app/Repositories", "OrderRepository"), ("app/Models", "Order"), ("app/Events", "OrderCreated"), ("app/Listeners", "SyncOrder")):
+        path = root / folder; path.mkdir(parents=True, exist_ok=True)
+        (path / f"{name}.php").write_text(f"<?php class {name} {{}}")
+    context = build(root, {"nodes": []})
+    system = context["system_model"]
+    assert system["framework"]["version"] == "^11.0"
+    assert system["framework"]["php_version"] == "^8.2"
+    assert {item["category"] for item in system["dependencies"]} >= {"framework", "http", "authentication", "testing"}
+    assert {item["type"] for item in system["components"]} >= {"controller", "service", "repository", "model"}
+    route = system["routes"][0]
+    assert route["line"] == 2 and route["evidence"][0]["line"] == 2
+    assert route["evidence"][0]["snippet"] == "Route::post('/orders', [OrderController::class, 'store']);"
+    assert len(system["events"]) == 1 and len(system["listeners"]) == 1
+    page = render_portal(context, render_agent(context), [])
+    assert "Laravel ^11.0" in page and "PHP ^8.2" in page

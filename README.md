@@ -1,6 +1,11 @@
 # KlapContext
 
-Make your repository understandable to humans and AI.
+**Understand an unfamiliar codebase before changing it.**
+
+KlapContext convierte evidencia de código en un modelo del sistema: puntos de
+entrada, flujos, automatizaciones, integraciones y sus incertidumbres.
+Graphify funciona como proveedor de análisis técnico; KlapContext es la capa
+que transforma esa evidencia en comprensión para personas y agentes de IA.
 
 KlapContext convierte un repositorio en contexto de ingeniería reutilizable: un
 portal estático para personas y un briefing compacto para agentes de IA. Usa
