@@ -8,16 +8,20 @@ from .evidence import Evidence
 
 def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
     evidence: list[Evidence] = []
-    stack = {"languages": [], "frameworks": [], "databases": [], "runtime": [], "infrastructure": []}
+    stack = {"languages": [], "frameworks": [], "databases": [], "runtime": [], "infrastructure": [], "package_managers": [], "project_type": "unknown"}
     def add(bucket: str, value: str, path: str, reason: str) -> None:
         if value not in stack[bucket]: stack[bucket].append(value)
         evidence.append(Evidence("file", path, reason, "CONFIRMED", 1.0))
     composer = root / "composer.json"
     if composer.exists():
         add("languages", "PHP", "composer.json", "Composer manifest detected")
+        stack["runtime"].append("PHP"); stack["package_managers"].append("composer")
         try: deps = {**json.loads(composer.read_text(encoding="utf-8")).get("require", {}), **json.loads(composer.read_text(encoding="utf-8")).get("require-dev", {})}
         except json.JSONDecodeError: deps = {}
         if "laravel/framework" in deps: add("frameworks", "Laravel", "composer.json", "laravel/framework dependency detected")
+        if "laravel/lumen-framework" in deps:
+            add("frameworks", "Lumen", "composer.json", "laravel/lumen-framework dependency detected")
+            stack["project_type"] = "backend-api"
     elif any(root.rglob("*.php")):
         # A standalone PHP repository has no Composer manifest to identify it,
         # but language analysis can still provide a useful generic model.
@@ -26,6 +30,7 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
     package = root / "package.json"
     if package.exists():
         add("languages", "JavaScript", "package.json", "npm manifest detected")
+        stack["runtime"].append("Node.js"); stack["package_managers"].append("npm")
         try: deps = {**json.loads(package.read_text(encoding="utf-8")).get("dependencies", {}), **json.loads(package.read_text(encoding="utf-8")).get("devDependencies", {})}
         except json.JSONDecodeError: deps = {}
         for name, label in (("next", "Next.js"), ("vue", "Vue"), ("react", "React"), ("express", "Express"), ("@nestjs/core", "NestJS")):
@@ -33,9 +38,13 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
     if (root / "pyproject.toml").exists() or (root / "requirements.txt").exists():
         python_manifest = root / "pyproject.toml" if (root / "pyproject.toml").exists() else root / "requirements.txt"
         add("languages", "Python", python_manifest.name, "Python manifest detected")
+        stack["runtime"].append("Python"); stack["package_managers"].append("pip")
         if "fastapi" in python_manifest.read_text(encoding="utf-8", errors="ignore").casefold(): add("frameworks", "FastAPI", python_manifest.name, "FastAPI dependency detected")
     if (root / "manage.py").exists(): add("frameworks", "Django", "manage.py", "Django entry point detected")
-    if list(root.glob("*.csproj")): add("languages", "C#", next(root.glob("*.csproj")).name, ".NET project detected")
+    if list(root.glob("*.csproj")):
+        add("languages", "C#", next(root.glob("*.csproj")).name, ".NET project detected"); stack["runtime"].append(".NET"); stack["package_managers"].append("NuGet")
+        if (root / "Program.cs").exists(): add("frameworks", ".NET Web API", "Program.cs", "ASP.NET entry point detected")
+    if any(name in stack["frameworks"] for name in ("Laravel", "Lumen", "FastAPI", "Express", "NestJS", ".NET Web API")): stack["project_type"] = "backend-api"
     if (root / "Dockerfile").exists(): add("infrastructure", "Docker", "Dockerfile", "Dockerfile detected")
     if list(root.glob("docker-compose*")) or list(root.glob("compose*")): add("infrastructure", "Docker Compose", "docker-compose", "Compose configuration detected")
     if (root / ".github" / "workflows").exists(): add("infrastructure", "GitHub Actions", ".github/workflows", "GitHub Actions workflows detected")

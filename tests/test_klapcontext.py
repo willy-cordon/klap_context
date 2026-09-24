@@ -37,6 +37,14 @@ def test_detector_collects_confirmed_evidence(tmp_path):
     assert all(item.status == "CONFIRMED" for item in evidence)
 
 
+def test_lumen_detection_and_route_adapter():
+    root = Path(__file__).parent / "fixtures" / "lumen_semantic"
+    stack, _ = detect_project(root)
+    assert "Lumen" in stack["frameworks"]
+    context = build(root, {"nodes": []})
+    assert context["system_model"]["routes"][0]["name"] == "POST /api/v1/call-vtex"
+
+
 def test_portal_has_dashboard_and_real_views(tmp_path):
     context = build(fixture_repo(tmp_path), {"nodes": [{"name": "UserController", "path": "app/Http/UserController.php", "type": "controller"}]})
     page = render_portal(context, render_agent(context), ["graph.html"])

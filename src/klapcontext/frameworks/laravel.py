@@ -61,7 +61,7 @@ def _routes(root: Path) -> tuple[list[dict], list[dict]]:
     directory = root / "routes"
     if not directory.is_dir():
         return routes, scheduled
-    route_pattern = re.compile(r"Route::(get|post|put|patch|delete|options|any)\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*(.+?)\);", re.S | re.I)
+    route_pattern = re.compile(r"(?:Route|\$app|\$router)(?:::|->)(get|post|put|patch|delete|options|any)\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*(.+?)\);", re.S | re.I)
     resource_pattern = re.compile(r"Route::(?:api)?resource\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)::class", re.I)
     schedule_pattern = re.compile(r"Schedule::(?:command|job)\s*\(\s*['\"]([^'\"]+)['\"]\s*\).*?->([A-Za-z]\w*)\s*\(", re.S)
     for file in directory.glob("*.php"):
@@ -69,6 +69,9 @@ def _routes(root: Path) -> tuple[list[dict], list[dict]]:
         for match in route_pattern.finditer(text):
             method, uri, target = match.groups()
             handler = _symbol(target)
+            if not handler:
+                callback = re.search(r"['\"]([A-Za-z_]\w*)@([A-Za-z_]\w*)['\"]", target)
+                handler = f"{callback.group(1)}::{callback.group(2)}" if callback else None
             name = f"{method.upper()} /{uri.lstrip('/')}"
             routes.append({"type": "http", "method": method.upper(), "uri": "/" + uri.lstrip("/"), "name": name, "path": str(file.relative_to(root)), "source": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "target": handler, "handler": handler, "middleware": [], "status": "CONFIRMED", "evidence": _e(root, file, match.start(), "Declaración de ruta Laravel", symbol=name)})
         for match in resource_pattern.finditer(text):

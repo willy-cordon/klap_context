@@ -86,7 +86,7 @@ def _empty_raw() -> dict:
 
 
 def _semantic(root: Path, stack: dict) -> tuple[SemanticModel, dict]:
-    if "Laravel" in stack["frameworks"]:
+    if "Laravel" in stack["frameworks"] or "Lumen" in stack["frameworks"]:
         model = LaravelAdapter().analyze(root)
         return model, model.metadata["raw"]
     if "FastAPI" in stack["frameworks"]:
