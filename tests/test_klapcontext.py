@@ -16,6 +16,7 @@ from klapcontext.frameworks.fastapi import FastAPIAdapter
 from klapcontext.frameworks.node import NodeAdapter
 from klapcontext.agent.compiler import change_context, compile_context, debug_context, compile_test_context
 from klapcontext.agent.impact import analyze_impact
+from klapcontext.git import intelligence
 
 
 def fixture_repo(tmp_path):
@@ -214,3 +215,8 @@ def test_impact_connects_structural_callers_with_generic_flow():
     root = Path(__file__).parent / "fixtures" / "php_code_intelligence"
     result = analyze_impact(root, "AuthService::authenticate")
     assert result["direct_callers"] and "potencialmente afectados" in result["statement"]
+
+
+def test_git_intelligence_reports_current_repository_state():
+    result = intelligence(Path(__file__).parent.parent)
+    assert result["branch"] and result["commit"] and isinstance(result["recent_changes"], list)
