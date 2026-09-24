@@ -46,6 +46,13 @@ Proveedor de análisis + detectores de framework
 
 ## Restricciones
 
+## Agent Intelligence
+
+La capa `agent/` planifica el contexto mínimo para una intención antes de
+invocar proveedores. El detalle y el presupuesto de tokens son parte del plan,
+no una decisión implícita de una herramienta. Ver
+[AGENT_INTELLIGENCE.md](AGENT_INTELLIGENCE.md).
+
 - Graphify es evidencia/proveedor; no es la interfaz de producto.
 - Ninguna heurística se presenta como un hecho confirmado.
 - Los analizadores deben ser determinísticos antes de añadir inferencias.

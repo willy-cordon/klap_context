@@ -7,6 +7,14 @@ entrada, flujos, automatizaciones, integraciones y sus incertidumbres.
 Graphify funciona como proveedor de análisis técnico; KlapContext es la capa
 que transforma esa evidencia en comprensión para personas y agentes de IA.
 
+## Agent Intelligence
+
+KlapContext planifica el **mínimo contexto relevante** antes de que un agente
+empiece a cambiar código. Según la intención —entender, modificar, depurar,
+probar, refactorizar o medir impacto— selecciona capacidades y proveedores
+necesarios, sin acoplarse a una herramienta externa ni cargar archivos enteros
+por defecto. La compilación de Task Context llegará en los siguientes sprints.
+
 KlapContext convierte un repositorio en contexto de ingeniería reutilizable: un
 portal estático para personas y un briefing compacto para agentes de IA. Usa
 [Graphify](https://github.com/Graphify-Labs/graphify) como motor local de

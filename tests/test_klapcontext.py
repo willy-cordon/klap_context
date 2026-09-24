@@ -1,6 +1,8 @@
 import json
 
 from klapcontext import cli
+from klapcontext.agent.capabilities import Capability, CapabilityRouter, default_providers
+from klapcontext.agent.planner import ContextPlanner
 from klapcontext.agent_context import render as render_agent
 from klapcontext.context_builder import build
 from klapcontext.detector import detect_project
@@ -87,3 +89,20 @@ def test_laravel_analysis_includes_versions_components_and_navigable_evidence(tm
     assert len(system["events"]) == 1 and len(system["listeners"]) == 1
     page = render_portal(context, render_agent(context), [])
     assert "Laravel ^11.0" in page and "PHP ^8.2" in page
+
+
+def test_agent_planner_selects_only_change_capabilities_for_authentication():
+    plan = ContextPlanner().plan("Quiero modificar autenticación JWT", detail="standard", max_tokens=1200)
+    assert plan.intent == "CHANGE" and plan.area == "authentication"
+    assert "entry_point_discovery" in plan.capabilities
+    assert "integration_discovery" not in plan.capabilities
+    symbol = next(item for item in plan.providers if item["capability"] == "symbol_lookup")
+    assert symbol["status"] == "UNAVAILABLE" and symbol["fallbacks"] == ["tree-sitter"]
+
+
+def test_capability_router_uses_available_fallback_without_breaking_plan():
+    router = CapabilityRouter(default_providers(graphify_ready=False))
+    resolution = router.resolve(Capability.DEPENDENCY_GRAPH)
+    assert resolution.status == "UNAVAILABLE" and resolution.provider is None
+    plan = ContextPlanner(router).plan("¿Qué hace este sistema?", detail="minimal", max_tokens=500)
+    assert plan.intent == "UNDERSTAND" and len(plan.sections) < 6
