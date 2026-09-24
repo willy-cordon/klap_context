@@ -54,3 +54,20 @@ primer adapter completo; PHP sin framework sigue operando en modo `GENERIC`.
 Esto permite que próximos adapters de FastAPI, Django o Express enriquezcan la
 misma planificación, ranking y presupuesto de tokens sin acoplarlos al
 framework.
+
+## Sprints 4 a 6
+
+FastAPI, Express y NestJS enriquecen el mismo `SemanticModel` que Laravel.
+El detector identifica componentes por manifests en subdirectorios para
+representar monorepos sin asumir una estructura única.
+
+`agent/compiler.py` compila contexto compacto para SYSTEM, AREA, CHANGE,
+DEBUG y TEST. El ranking prioriza evidencia y entry points, luego
+flujos/símbolos y finalmente contexto periférico. Los niveles `minimal`,
+`standard` y `deep` trabajan junto a `max_tokens`. El comando
+`klap context "..." --detail minimal --max-tokens 500 --json` expone esta
+salida a agentes y scripts.
+
+`agent/impact.py` combina callers estructurales con flows, entry points,
+tests, configuración e integraciones. Sus resultados dicen
+“potencialmente afectados” y conservan incertidumbres: no predicen roturas.
