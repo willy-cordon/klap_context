@@ -18,6 +18,7 @@ from klapcontext.agent.compiler import change_context, compile_context, debug_co
 from klapcontext.agent.impact import analyze_impact
 from klapcontext.git import intelligence
 from klapcontext.agent.verification import sanitize
+from klapcontext.agent.workflows import verify_change
 
 
 def fixture_repo(tmp_path):
@@ -226,3 +227,8 @@ def test_git_intelligence_reports_current_repository_state():
 
 def test_sanitization_removes_secret_values_from_context():
     assert "[REDACTED]" in sanitize("API_KEY=not-for-agents")
+
+
+def test_verify_change_reports_current_diff_without_approval():
+    result = verify_change(Path(__file__).parent.parent)
+    assert result["workflow"] == "VERIFY_CHANGE" and "no aprueba" in result["statement"]
