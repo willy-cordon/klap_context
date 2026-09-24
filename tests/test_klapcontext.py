@@ -14,6 +14,7 @@ from klapcontext.frameworks.generic_php import GenericPhpAdapter
 from klapcontext.frameworks.laravel import LaravelAdapter
 from klapcontext.frameworks.fastapi import FastAPIAdapter
 from klapcontext.frameworks.node import NodeAdapter
+from klapcontext.agent.compiler import compile_context
 
 
 def fixture_repo(tmp_path):
@@ -191,3 +192,11 @@ def test_detect_components_finds_multiple_subprojects():
     root = Path(__file__).parent / "fixtures" / "monorepo"
     components = detect_components(root)
     assert {item["path"] for item in components} == {"backend", "frontend"}
+
+
+def test_context_compiler_ranks_compact_task_context():
+    root = Path(__file__).parent / "fixtures" / "laravel_semantic"
+    minimal = compile_context(root, "modificar orders", detail="minimal", max_tokens=400)
+    deep = compile_context(root, "modificar orders", detail="deep", max_tokens=5000)
+    assert minimal["intent"] == "CHANGE" and minimal["estimated_tokens"] <= 400
+    assert len(minimal["read_first"]) <= len(deep["read_first"])
