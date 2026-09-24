@@ -10,6 +10,8 @@ from klapcontext.detector import detect_project
 from klapcontext.git import exclude_klap
 from klapcontext.portal import render as render_portal
 from klapcontext.providers.code_intelligence import PhpCodeIntelligenceProvider
+from klapcontext.frameworks.generic_php import GenericPhpAdapter
+from klapcontext.frameworks.laravel import LaravelAdapter
 
 
 def fixture_repo(tmp_path):
@@ -143,3 +145,25 @@ def test_php_code_intelligence_reuses_cache_and_registers_provider():
     assert provider.cache_file.exists() and provider.index()["fingerprint"] == first["fingerprint"]
     resolution = CapabilityRouter(default_providers()).resolve(Capability.CALL_GRAPH)
     assert resolution.provider == "php-tree-sitter" and resolution.status == "READY"
+
+
+def test_generic_php_adapter_keeps_analysis_useful_without_framework():
+    root = Path(__file__).parent / "fixtures" / "php_generic"
+    model = GenericPhpAdapter().analyze(root).as_dict()
+    assert model["framework"] is None and model["analysis_mode"] == "GENERIC"
+    assert any(item["name"] == "main" for item in model["entry_points"])
+    assert any(item["type"] == "CALL" for item in model["transitions"])
+    context = build(root, {"nodes": []})
+    assert context["system_model"]["semantic_model"]["analysis_mode"] == "GENERIC"
+    assert context["flows"]
+
+
+def test_laravel_adapter_emits_generic_entries_and_semantic_transitions():
+    root = Path(__file__).parent / "fixtures" / "laravel_semantic"
+    model = LaravelAdapter().analyze(root).as_dict()
+    endpoint = next(item for item in model["entry_points"] if item["type"] == "HTTP")
+    assert endpoint["method"] == "POST" and endpoint["path"] == "/orders"
+    kinds = {item["type"] for item in model["transitions"]}
+    assert {"HTTP_ENTRY", "CALL", "QUEUE_DISPATCH", "EXTERNAL_CALL"} <= kinds
+    flows = build(root, {"nodes": []})["flows"]
+    assert any(any("OrderService::create" in step["name"] for step in flow["steps"]) for flow in flows)

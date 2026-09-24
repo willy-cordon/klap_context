@@ -18,6 +18,11 @@ def detect_project(root: Path) -> tuple[dict, list[Evidence]]:
         try: deps = {**json.loads(composer.read_text(encoding="utf-8")).get("require", {}), **json.loads(composer.read_text(encoding="utf-8")).get("require-dev", {})}
         except json.JSONDecodeError: deps = {}
         if "laravel/framework" in deps: add("frameworks", "Laravel", "composer.json", "laravel/framework dependency detected")
+    elif any(root.rglob("*.php")):
+        # A standalone PHP repository has no Composer manifest to identify it,
+        # but language analysis can still provide a useful generic model.
+        first_php = next(root.rglob("*.php"))
+        add("languages", "PHP", str(first_php.relative_to(root)).replace("\\", "/"), "PHP source file detected")
     package = root / "package.json"
     if package.exists():
         add("languages", "JavaScript", "package.json", "npm manifest detected")

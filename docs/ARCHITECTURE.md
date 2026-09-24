@@ -16,6 +16,27 @@ Proveedor de análisis + detectores de framework
 
 ## Piezas actuales
 
+### Modelo semántico genérico (Sprint 3)
+
+El núcleo no usa conceptos internos de Laravel. La secuencia de análisis es:
+
+```text
+Repositorio → detección de proyecto → inteligencia de lenguaje
+           → adapter de framework → SemanticModel → flujos/contexto
+```
+
+- `semantic.py` define `EntryPoint`, `ExecutionTransition` y `SemanticComponent`.
+- `frameworks/base.py` define el contrato `FrameworkAdapter`.
+- `frameworks/laravel.py` traduce rutas, scheduler y convenciones Laravel a
+  tipos genéricos como `HTTP_ENTRY`, `SCHEDULED_ENTRY`, `QUEUE_DISPATCH` y
+  `EXTERNAL_CALL`.
+- `frameworks/generic_php.py` conserva símbolos, llamadas y un entry point
+  heurístico `main()` aun cuando no existe framework reconocido.
+
+`context_builder.py` reconstruye flujos exclusivamente desde el
+`SemanticModel`. Agregar un adapter futuro (por ejemplo FastAPI) no debe exigir
+cambios en Agent Intelligence ni en esa reconstrucción.
+
 - `providers/`: contrato para motores de análisis. `GraphifyProvider` adapta el
   motor actual sin acoplarlo al modelo del sistema.
 - `providers/code_intelligence.py`: provider local Tree-sitter PHP que genera

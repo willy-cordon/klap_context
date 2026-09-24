@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 EXCLUDED = {".git", ".klap", "vendor", "node_modules", "build", "dist", ".venv", "venv", ".test-venv"}
-INDEX_VERSION = 2
+INDEX_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -147,6 +147,7 @@ class PhpCodeIntelligenceProvider:
             if name:
                 qualified = f"{namespace}\\{name}" if namespace else name
                 symbols.append(asdict(CodeSymbol(qualified, name, qualified, "function", relative, _line(source, function.start_byte), _line(source, function.end_byte), namespace)))
+                relations.extend(self._calls(function, source, qualified, relative, {}))
         return {"symbols": symbols, "relations": relations}
 
     def _properties(self, declaration, source: bytes) -> dict[str, str]:

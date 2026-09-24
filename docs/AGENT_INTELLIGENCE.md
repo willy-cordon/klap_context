@@ -45,3 +45,12 @@ símbolos, `CALLS`, `INSTANTIATES`, `EXTENDS` e `IMPLEMENTS`. El índice se
 cachea por metadatos de archivos y se consulta bajo demanda para callers,
 callees, call graph, impacto y contexto mínimo de edición. Las relaciones no
 resueltas por tipo se entregan como `INFERRED`.
+
+## Sprint 3: frontera agnóstica de framework
+
+Agent Intelligence consume `EntryPoint`, `ExecutionTransition` y
+`SemanticComponent`, nunca estructuras específicas de Laravel. Laravel es el
+primer adapter completo; PHP sin framework sigue operando en modo `GENERIC`.
+Esto permite que próximos adapters de FastAPI, Django o Express enriquezcan la
+misma planificación, ranking y presupuesto de tokens sin acoplarlos al
+framework.

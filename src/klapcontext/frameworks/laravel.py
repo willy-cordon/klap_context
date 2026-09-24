@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 
 from ..evidence import Evidence, from_match
+from ..providers.code_intelligence import PhpCodeIntelligenceProvider
+from ..semantic import EntryPoint, ExecutionTransition, SemanticComponent, SemanticModel
 
 
 def _read(path: Path) -> str:
@@ -136,3 +138,46 @@ def analyze(root: Path) -> dict:
         if values:
             surfaces.append({"type": kind, "label": label, "count": len(values), "items": values})
     return {"framework": {"name": "Laravel", "version": versions["laravel"], "php_version": versions["php"], "status": "CONFIRMED", "evidence": [Evidence("manifest", "composer.json", "laravel/framework declarado", "CONFIRMED", 1.0, symbol="laravel/framework").as_dict()]}, "routes": routes, "commands": commands, "scheduled_processes": scheduled, "queue_jobs": jobs, "events": events, "listeners": listeners, "components": components, "dependencies": dependencies, "runtime_surfaces": surfaces, "important_files": important}
+
+
+class LaravelAdapter:
+    """Translate Laravel conventions into the shared semantic vocabulary."""
+
+    name = "Laravel"
+
+    def detect(self, root: Path) -> bool:
+        return (root / "composer.json").exists() and "laravel/framework" in _read(root / "composer.json")
+
+    def analyze(self, root: Path) -> SemanticModel:
+        raw = analyze(root)
+        components = [SemanticComponent(item["name"], item["type"], item["path"], item["name"], item["status"], item["evidence"]) for item in raw["components"] + raw["queue_jobs"] + raw["events"] + raw["listeners"]]
+        entries = []
+        transitions = []
+        for route in raw["routes"]:
+            entries.append(EntryPoint("HTTP", route["name"], route.get("target"), "HTTP", route.get("method"), route.get("uri"), route["path"], route["line"], "Laravel", route["status"], route["evidence"]))
+            if route.get("target"):
+                transitions.append(ExecutionTransition(route["name"], route["target"], "HTTP_ENTRY", route["path"], route["line"], route["status"], "laravel", route["evidence"]))
+        for command in raw["commands"]:
+            entries.append(EntryPoint("CLI", command["name"], command["name"], file=command["path"], line=command["line"], framework="Laravel", status=command["status"], evidence=command["evidence"]))
+        for scheduled in raw["scheduled_processes"]:
+            entries.append(EntryPoint("SCHEDULED", scheduled["name"], scheduled["name"], file=scheduled["path"], line=scheduled["line"], framework="Laravel", status=scheduled["status"], evidence=scheduled["evidence"]))
+            transitions.append(ExecutionTransition("Scheduler", scheduled["name"], "SCHEDULED_ENTRY", scheduled["path"], scheduled["line"], scheduled["status"], "laravel", scheduled["evidence"], {"schedule": scheduled.get("schedule")}))
+        for job in raw["queue_jobs"]:
+            entries.append(EntryPoint("QUEUE", job["name"], f"{job['name']}::handle", file=job["path"], line=job["line"], framework="Laravel", status=job["status"], evidence=job["evidence"]))
+
+        # Structural calls are language-level evidence; Laravel gives the framework
+        # meaning to dispatch and HTTP client conventions without leaking that meaning
+        # into consumers of this model.
+        index = PhpCodeIntelligenceProvider(root).index()
+        for relation in index["relations"]:
+            transition_type = "CALL" if relation["relation"] == "CALLS" else relation["relation"]
+            target = relation["target_symbol"]
+            expression = relation.get("metadata", {}).get("expression", "")
+            if target.endswith("::dispatch"):
+                transition_type = "QUEUE_DISPATCH"
+                target = target.rsplit("::", 1)[0]
+            elif target.startswith("Http::") or "Http::" in expression:
+                transition_type = "EXTERNAL_CALL"
+            evidence = [Evidence("code", relation["file"], "Relación estructural PHP", relation["confidence"], 1.0 if relation["confidence"] == "CONFIRMED" else .7, line=relation["line"], symbol=relation["source_symbol"]).as_dict()]
+            transitions.append(ExecutionTransition(relation["source_symbol"], target, transition_type, relation["file"], relation["line"], relation["confidence"], relation["provider"], evidence, relation.get("metadata", {})))
+        return SemanticModel("PHP", "Laravel", "FRAMEWORK", components, entries, transitions, raw["scheduled_processes"] + raw["queue_jobs"], {"raw": raw})
