@@ -81,6 +81,11 @@ def _group_spans(text: str) -> list[tuple[int, int, str, list[str]]]:
     return groups
 
 
+def _comment_spans(text: str) -> list[tuple[int, int]]:
+    """Offsets covered by PHP line or block comments, preserving source lines."""
+    return [(match.start(), match.end()) for match in re.finditer(r"//[^\n]*|/\*.*?\*/", text, re.S)]
+
+
 def _routes(root: Path) -> tuple[list[dict], list[dict]]:
     routes, scheduled = [], []
     directory = root / "routes"
@@ -92,7 +97,10 @@ def _routes(root: Path) -> tuple[list[dict], list[dict]]:
     for file in directory.glob("*.php"):
         text = _read(file)
         groups = _group_spans(text)
+        comments = _comment_spans(text)
         for match in route_pattern.finditer(text):
+            if any(start <= match.start() < end for start, end in comments):
+                continue
             method, uri, target = match.groups()
             handler = _symbol(target)
             if not handler:

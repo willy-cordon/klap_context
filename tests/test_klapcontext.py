@@ -52,6 +52,7 @@ def test_lumen_detection_and_route_adapter():
     context = build(root, {"nodes": []})
     route = context["system_model"]["routes"][0]
     assert route["name"] == "POST /api/v1/call-vtex"
+    assert len(context["system_model"]["routes"]) == 1
     assert route["middleware"] == ["apikey"]
     assert context["system_model"]["framework"]["name"] == "Lumen"
     flow = context["system_model"]["main_flows"][0]

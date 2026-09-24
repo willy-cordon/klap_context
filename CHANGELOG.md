@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Ignores commented PHP route declarations.
+
 ## 0.3.0
 
 - Added Lumen route-group support, including inherited prefixes and middleware.
