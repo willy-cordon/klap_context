@@ -33,9 +33,15 @@ archivos completos cuando un snippet o símbolo es suficiente.
 
 ## Próximos sprints
 
-1. Provider opcional de inteligencia PHP y representación unificada de sus
-   resultados como evidencia.
-2. Semántica Laravel y reconciliación de relaciones de flujo.
-3. Ranking explicable, token budget y contexto mínimo de edición.
-4. Compiladores para task/change/debug/test context y CLI.
-5. MCP de alto nivel, con un número pequeño de herramientas orientadas a tarea.
+1. Semántica Laravel y reconciliación de relaciones de flujo.
+2. Ranking explicable, token budget y contexto mínimo de edición.
+3. Compiladores para task/change/debug/test context y CLI.
+4. MCP de alto nivel, con un número pequeño de herramientas orientadas a tarea.
+
+## Sprint 2
+
+`providers/code_intelligence.py` usa Tree-sitter PHP local para indexar
+símbolos, `CALLS`, `INSTANTIATES`, `EXTENDS` e `IMPLEMENTS`. El índice se
+cachea por metadatos de archivos y se consulta bajo demanda para callers,
+callees, call graph, impacto y contexto mínimo de edición. Las relaciones no
+resueltas por tipo se entregan como `INFERRED`.

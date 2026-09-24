@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from klapcontext import cli
 from klapcontext.agent.capabilities import Capability, CapabilityRouter, default_providers
@@ -8,6 +9,7 @@ from klapcontext.context_builder import build
 from klapcontext.detector import detect_project
 from klapcontext.git import exclude_klap
 from klapcontext.portal import render as render_portal
+from klapcontext.providers.code_intelligence import PhpCodeIntelligenceProvider
 
 
 def fixture_repo(tmp_path):
@@ -97,7 +99,7 @@ def test_agent_planner_selects_only_change_capabilities_for_authentication():
     assert "entry_point_discovery" in plan.capabilities
     assert "integration_discovery" not in plan.capabilities
     symbol = next(item for item in plan.providers if item["capability"] == "symbol_lookup")
-    assert symbol["status"] == "UNAVAILABLE" and symbol["fallbacks"] == ["tree-sitter"]
+    assert symbol["status"] == "READY" and symbol["provider"] == "php-tree-sitter"
 
 
 def test_capability_router_uses_available_fallback_without_breaking_plan():
@@ -106,3 +108,38 @@ def test_capability_router_uses_available_fallback_without_breaking_plan():
     assert resolution.status == "UNAVAILABLE" and resolution.provider is None
     plan = ContextPlanner(router).plan("¿Qué hace este sistema?", detail="minimal", max_tokens=500)
     assert plan.intent == "UNDERSTAND" and len(plan.sections) < 6
+
+
+def test_php_code_intelligence_discovers_symbols_and_relations():
+    root = Path(__file__).parent / "fixtures" / "php_code_intelligence"
+    provider = PhpCodeIntelligenceProvider(root)
+    service = provider.find_symbol("AuthService::authenticate")[0]
+    assert service["file"] == "app/Services/AuthService.php"
+    assert service["namespace"] == "App\\Services" and service["parent"] == "App\\Services\\AuthService"
+    assert {item["type"] for item in provider.index()["symbols"]} >= {"class", "trait", "method", "constructor"}
+    assert any(item["relation"] == "EXTENDS" for item in provider.index()["relations"])
+    assert any(item["relation"] == "IMPLEMENTS" for item in provider.index()["relations"])
+
+
+def test_php_code_intelligence_callers_graph_impact_and_minimal_context():
+    root = Path(__file__).parent / "fixtures" / "php_code_intelligence"
+    provider = PhpCodeIntelligenceProvider(root)
+    callers = provider.callers("AuthService::authenticate")
+    assert callers[0]["source_symbol"].endswith("AuthController::login")
+    graph = provider.call_graph("AuthController::login", depth=3)
+    targets = {item["target_symbol"] for item in graph["edges"]}
+    assert "AuthService::authenticate" in targets and "JwtService::createToken" in targets and "AuditLogger::log" in targets
+    impact = provider.impact("AuthService::authenticate")
+    assert impact["direct_callers"] and impact["related_tests"] == ["tests/Feature/AuthTest.php"]
+    context = provider.minimal_edit_context("AuthService::authenticate", max_tokens=300)
+    assert "function authenticate" in context["source"]
+    assert "JwtService::createToken" in {item["target_symbol"] for item in context["callees"]}
+
+
+def test_php_code_intelligence_reuses_cache_and_registers_provider():
+    root = Path(__file__).parent / "fixtures" / "php_code_intelligence"
+    provider = PhpCodeIntelligenceProvider(root)
+    first = provider.index()
+    assert provider.cache_file.exists() and provider.index()["fingerprint"] == first["fingerprint"]
+    resolution = CapabilityRouter(default_providers()).resolve(Capability.CALL_GRAPH)
+    assert resolution.provider == "php-tree-sitter" and resolution.status == "READY"

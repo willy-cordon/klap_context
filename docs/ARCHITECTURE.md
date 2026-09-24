@@ -18,6 +18,8 @@ Proveedor de análisis + detectores de framework
 
 - `providers/`: contrato para motores de análisis. `GraphifyProvider` adapta el
   motor actual sin acoplarlo al modelo del sistema.
+- `providers/code_intelligence.py`: provider local Tree-sitter PHP que genera
+  un índice cacheado de símbolos y relaciones estructurales por demanda.
 - `detector.py`: detecta lenguaje, framework e infraestructura.
 - `frameworks/laravel.py`: interpreta convenciones Laravel y `composer.json`.
 - `evidence.py`: representa evidencia con archivo, línea, símbolo, snippet,

@@ -53,9 +53,14 @@ class CapabilityRouter:
         return CapabilityResolution(capability, None, "UNAVAILABLE", tuple(provider.name for provider in candidates))
 
 
-def default_providers(graphify_ready: bool = True) -> list[ProviderInfo]:
+def default_providers(graphify_ready: bool | None = None) -> list[ProviderInfo]:
+    from ..providers.code_intelligence import available as php_code_intelligence_available
+    if graphify_ready is None:
+        from ..graphify import command_prefix
+        graphify_ready = command_prefix() is not None
     return [
         ProviderInfo("klap-native", frozenset({Capability.FRAMEWORK_ANALYSIS, Capability.ENTRY_POINT_DISCOVERY, Capability.FLOW_RECONSTRUCTION, Capability.TEST_DISCOVERY, Capability.INTEGRATION_DISCOVERY, Capability.AUTOMATION_DISCOVERY, Capability.CONFIG_DISCOVERY}), True),
         ProviderInfo("graphify", frozenset({Capability.DEPENDENCY_GRAPH, Capability.PATH_SEARCH, Capability.FLOW_RECONSTRUCTION}), graphify_ready),
-        ProviderInfo("tree-sitter", frozenset({Capability.SYMBOL_LOOKUP, Capability.CALL_GRAPH, Capability.CALLERS, Capability.CALLEES, Capability.IMPACT_ANALYSIS, Capability.MINIMAL_EDIT_CONTEXT}), False, True),
+        ProviderInfo("php-tree-sitter", frozenset({Capability.SYMBOL_LOOKUP, Capability.CALL_GRAPH, Capability.CALLERS, Capability.CALLEES, Capability.IMPACT_ANALYSIS, Capability.MINIMAL_EDIT_CONTEXT}), php_code_intelligence_available()),
+        ProviderInfo("tree-sitter-mcp", frozenset({Capability.SYMBOL_LOOKUP, Capability.CALL_GRAPH, Capability.CALLERS, Capability.CALLEES, Capability.IMPACT_ANALYSIS, Capability.MINIMAL_EDIT_CONTEXT}), False, True),
     ]
