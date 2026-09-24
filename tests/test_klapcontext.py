@@ -17,6 +17,7 @@ from klapcontext.frameworks.node import NodeAdapter
 from klapcontext.agent.compiler import change_context, compile_context, debug_context, compile_test_context
 from klapcontext.agent.impact import analyze_impact
 from klapcontext.git import intelligence
+from klapcontext.agent.verification import sanitize
 
 
 def fixture_repo(tmp_path):
@@ -202,6 +203,7 @@ def test_context_compiler_ranks_compact_task_context():
     deep = compile_context(root, "modificar orders", detail="deep", max_tokens=5000)
     assert minimal["intent"] == "CHANGE" and minimal["estimated_tokens"] <= 400
     assert len(minimal["read_first"]) <= len(deep["read_first"])
+    assert minimal["execution"]["adaptive"] and minimal["execution"]["files_selected"] <= deep["execution"]["files_selected"]
 
 
 def test_specialized_contexts_keep_the_compact_compiler_contract():
@@ -220,3 +222,7 @@ def test_impact_connects_structural_callers_with_generic_flow():
 def test_git_intelligence_reports_current_repository_state():
     result = intelligence(Path(__file__).parent.parent)
     assert result["branch"] and result["commit"] and isinstance(result["recent_changes"], list)
+
+
+def test_sanitization_removes_secret_values_from_context():
+    assert "[REDACTED]" in sanitize("API_KEY=not-for-agents")
