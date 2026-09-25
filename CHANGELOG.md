@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- Fix `klap init` crashing after generation when `stack.project_type` is a scalar.
+- Exclude scalar stack metadata from portal technology tags.
+
 ## 0.3.1
 
 - Ignores commented PHP route declarations.

@@ -30,7 +30,8 @@ def cmd_init(args):
     except (RuntimeError, GraphifyError) as e:
         print(f"✗ {e}", file=sys.stderr); return 1
     print("✓ Git repository detected\n✓ Graphify available\n✓ Graph generated\n✓ Engineering context generated\n✓ Agent context generated\n✓ Human portal generated")
-    print(f"\nProject: {context['project']['name']}\nStack: {' / '.join(sum((v for v in context['stack'].values()), [])) or 'unknown'}\nContext: CURRENT\n\nHuman portal:\n.klap/index.html\n\nAgent context:\n.klap/agent-context.md")
+    stack_items = [item for values in context["stack"].values() if isinstance(values, list) for item in values]
+    print(f"\nProject: {context['project']['name']}\nStack: {' / '.join(stack_items) or 'unknown'}\nContext: CURRENT\n\nHuman portal:\n.klap/index.html\n\nAgent context:\n.klap/agent-context.md")
     return 0
 
 def cmd_update(args):

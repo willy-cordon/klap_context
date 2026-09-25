@@ -63,7 +63,7 @@ def section(title: str, content: str, view: str, icon: str) -> str:
 def render(context: dict, agent_text: str, graphify_files: list[str]) -> str:
     project = context["project"]
     system = context.get("system_model", {})
-    stack = [item for values in context.get("stack", {}).values() for item in values]
+    stack = [item for values in context.get("stack", {}).values() if isinstance(values, list) for item in values]
     points = system.get("entry_points", [])
     flows = system.get("main_flows", [])
     evidence = context.get("evidence", [])

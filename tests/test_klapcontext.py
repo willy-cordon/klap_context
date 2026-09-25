@@ -73,6 +73,17 @@ def test_portal_has_dashboard_and_real_views(tmp_path):
     assert "Copiar contexto" in page
 
 
+def test_cli_and_portal_ignore_scalar_stack_metadata(tmp_path, monkeypatch, capsys):
+    context = build(fixture_repo(tmp_path), {"nodes": []})
+    monkeypatch.setattr(cli, "generate_all", lambda root: context)
+    assert cli.cmd_init(type("Args", (), {"path": str(tmp_path)})()) == 0
+    output = capsys.readouterr().out
+    assert "Stack: PHP / Laravel" in output
+    assert "backend-api" not in output
+    page = render_portal(context, render_agent(context), [])
+    assert "<span>backend-api</span>" not in page
+
+
 def test_exclude_klap_is_idempotent(tmp_path, monkeypatch):
     root = fixture_repo(tmp_path)
     monkeypatch.setattr("klapcontext.git.run_git", lambda root, *args: ".git" if args == ("rev-parse", "--git-dir") else "true")
