@@ -48,6 +48,14 @@ klap open
 `.klap/`. KlapContext agrega esa carpeta a `.git/info/exclude`; nunca modifica
 tu `.gitignore`.
 
+El portal incluye un árbol navegable de archivos y símbolos extraídos del grafo,
+recorridos de llamadas y cambios recientes de Git. El contexto del agente y
+`klap context` usan las mismas rutas y símbolos. El indicador de cobertura cuenta
+archivos de código con al menos un nodo en Graphify: **no mide exhaustividad de
+funciones ni garantiza que se hayan resuelto rutas dinámicas**. Los recorridos
+son caminos del grafo, no afirmaciones de que una ruta HTTP los ejecuta; sus
+ramas pueden requerir inspección del código original.
+
 ## Comandos
 
 | Comando | Descripción |

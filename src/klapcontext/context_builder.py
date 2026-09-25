@@ -9,7 +9,8 @@ from .frameworks.generic_php import GenericPhpAdapter
 from .frameworks.laravel import LaravelAdapter
 from .frameworks.fastapi import FastAPIAdapter
 from .frameworks.node import NodeAdapter
-from .git import commit
+from .git import commit, recent_changes
+from .exploration import inspect
 from .semantic import SemanticModel
 from .system import deployment, documents, external_systems, purpose
 
@@ -34,7 +35,7 @@ def _edges(graph: dict) -> list[dict]:
 
 
 def _modules(nodes: list[dict]) -> list[dict]:
-    return [{"name": item.get("label") or item.get("name") or item.get("id"), "path": item.get("file") or item.get("path"), "kind": item.get("type", "module"), "description": None, "status": "CONFIRMED", "evidence": []} for item in nodes if (item.get("label") or item.get("name") or item.get("id")) and (item.get("file") or item.get("path"))][:100]
+    return [{"name": item.get("label") or item.get("name") or item.get("id"), "path": item.get("source_file") or item.get("file") or item.get("path"), "kind": item.get("type", "module"), "description": None, "status": "CONFIRMED", "evidence": []} for item in nodes if isinstance(item, dict) and (item.get("label") or item.get("name") or item.get("id")) and (item.get("source_file") or item.get("file") or item.get("path"))][:100]
 
 
 def _runtime(points: list[dict], background: list[dict], frameworks: list[str]) -> dict:
@@ -133,11 +134,16 @@ def build(root: Path, graph: dict) -> dict:
     stack, detector_evidence = detect_project(root)
     docs = documents(root); value = purpose(root, docs); systems, stores = external_systems(root); deploy, observability, _ = deployment(root)
     semantic, raw = _semantic(root, stack); model = semantic.as_dict(); model["project_components"] = detect_components(root); points, background = model["entry_points"], model["background_tasks"]
+    exploration = inspect(root, graph, model)
     runtime = _runtime(points, background, stack["frameworks"]); inputs, outputs = _io(points, systems, stores); flows = _flows(model)
     important = raw["important_files"] or ([{"path": "README.md", "role": "Documentación", "reason": "README detectado"}] if (root / "README.md").exists() else [])
     tests = [{"path": item, "reason": "Tests detectados"} for item in ("tests", "test", "phpunit.xml", "pytest.ini") if (root / item).exists()]
     story = " ".join(item for item in (value["text"], runtime["description"], "La aplicación está contenerizada con Docker." if "Docker" in deploy["tools"] else None) if item)
     system = {"purpose": value, "project_story": {"text": story or None, "status": "CONFIRMED" if story else "UNKNOWN"}, "runtime": runtime, "framework": raw["framework"], "runtime_surfaces": raw["runtime_surfaces"], "routes": raw["routes"], "commands": raw["commands"], "scheduled_processes": raw["scheduled_processes"], "queue_jobs": raw["queue_jobs"], "events": raw["events"], "listeners": raw["listeners"], "components": raw["components"], "dependencies": raw["dependencies"], "semantic_model": model, "entry_points": points, "main_flows": flows, "system_interactions": _interactions(flows, systems, stores), "capabilities": _modules(_nodes(graph)), "inputs": inputs, "outputs": outputs, "external_systems": systems, "background_processes": background, "datastores": stores, "deployment": deploy, "observability": observability, "important_files": important, "start_here": [], "unknowns": [item for item, found in (("Propósito de negocio del proyecto", value["text"]), ("Plataforma de despliegue en producción", deploy["tools"])) if not found]}
+    system["exploration"] = exploration
+    system["recent_changes"] = recent_changes(root, limit=8)
+    if exploration["coverage"]["status"] == "PARTIAL":
+        system["unknowns"].append("Cobertura parcial del grafo: algunos archivos de código no tienen nodos; consultar el código original.")
     technical = {"languages": stack["languages"], "frameworks": stack["frameworks"], "framework": raw["framework"], "dependencies": raw["dependencies"], "graph": {"nodes": len(_nodes(graph)), "edges": len(_edges(graph))}, "documents": [{"path": item["path"]} for item in docs], "tests": tests, "infrastructure": stack["infrastructure"]}
     project = {"name": root.name, "type": stack["frameworks"][0] if stack["frameworks"] else None, "root": str(root.resolve()), "generated_at": datetime.now(timezone.utc).isoformat(), "git_commit": commit(root)}
     return {"schema_version": "0.5", "project": project, "technical_model": technical, "system_model": system, "semantic_model": model, "human_context": {"purpose": None, "users": None, "important_processes": [], "notes": []}, "stack": stack, "architecture": {"style": "MVC" if "Laravel" in stack["frameworks"] else None, "status": "INFERRED" if "Laravel" in stack["frameworks"] else "UNKNOWN", "confidence": None, "evidence": []}, "entry_points": points, "modules": system["capabilities"], "flows": flows, "api": raw["routes"], "jobs": background, "datastores": stores, "external_systems": systems, "deployment": deploy, "observability": observability, "tests": tests, "evidence": [item.as_dict() for item in detector_evidence] + value["evidence"] + _analysis_evidence(raw)}
