@@ -19,7 +19,10 @@ def _read(path: Path) -> str:
 
 def _symbol(target: str) -> str | None:
     match = re.search(r"(?:\[\s*)?([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)::class\s*,\s*['\"](\w+)['\"]", target)
-    return f"{match.group(1).split('\\')[-1]}::{match.group(2)}" if match else None
+    if not match:
+        return None
+    class_name = match.group(1).rsplit("\\", 1)[-1]
+    return f"{class_name}::{match.group(2)}"
 
 
 def _e(root: Path, path: Path, offset: int, reason: str, *, symbol: str | None = None, status: str = "CONFIRMED") -> list[dict]:
