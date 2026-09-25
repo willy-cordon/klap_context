@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- Adds safe, idempotent `AGENTS.md` onboarding with private and shared modes.
+- Preserves existing team instructions and refuses malformed managed markers.
+- Generates local Graphify MCP examples for Codex, Claude Code, Cursor and
+  generic MCP clients without changing global configuration.
+- Adds `klap doctor --agent` with freshness, path, graph and MCP readiness
+  checks, plus an optional bounded MCP startup probe.
+- Shows agent-readiness status in the existing portal.
+
 ## 0.3.2
 
 - Fix `klap init` crashing after generation when `stack.project_type` is a scalar.

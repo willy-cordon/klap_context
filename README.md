@@ -44,9 +44,21 @@ klap init
 klap open
 ```
 
-`klap init` genera el análisis Graphify y escribe artefactos locales bajo
-`.klap/`. KlapContext agrega esa carpeta a `.git/info/exclude`; nunca modifica
-tu `.gitignore`.
+`klap init` genera el análisis Graphify, escribe artefactos locales bajo
+`.klap/` y prepara un `AGENTS.md` privado para que los agentes descubran el
+contexto progresivamente. Ambos se agregan a `.git/info/exclude`; KlapContext
+nunca modifica tu `.gitignore`.
+
+Para compartir las instrucciones de onboarding con el equipo:
+
+```bash
+klap init --shared
+```
+
+El modo compartido genera un `AGENTS.md` versionable, sin rutas personales ni
+secretos. Si el archivo ya existe, KlapContext preserva su contenido y sólo
+administra el bloque entre `KLAPCONTEXT:START` y `KLAPCONTEXT:END`. Un archivo
+versionado nunca se modifica silenciosamente en modo privado.
 
 El portal incluye un árbol navegable de archivos y símbolos extraídos del grafo,
 recorridos de llamadas y cambios recientes de Git. El contexto del agente y
@@ -66,6 +78,7 @@ ramas pueden requerir inspección del código original.
 | `klap open [ruta]` | Abre el portal humano estático. |
 | `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
 | `klap context "tarea" [ruta]` | Compila un contexto focalizado reutilizando `.klap/context.json` si existe. |
+| `klap doctor --agent [ruta]` | Comprueba AGENTS.md, freshness, Graphify y configuración MCP. |
 | `klap --version` | Muestra la versión instalada. |
 
 ## Salidas
@@ -76,8 +89,14 @@ ramas pueden requerir inspección del código original.
 ├── agent-context.md      # briefing para agentes de IA
 ├── index.html            # portal humano, sin servidor
 ├── state.json            # metadatos de freshness
+├── mcp/                  # configuración local reutilizable para clientes MCP
 └── graphify/             # grafo, informe y visualizaciones de Graphify
 ```
+
+`klap agent` genera ejemplos locales para Codex, Claude Code, Cursor y clientes
+MCP genéricos. No instala agentes ni modifica configuraciones globales. Usá
+`klap doctor --agent --probe-mcp` para comprobar que Graphify MCP puede iniciar;
+eso no equivale a verificar una conexión real de un cliente.
 
 Las afirmaciones incluyen evidencia y estados `CONFIRMED`, `INFERRED` o
 `UNKNOWN`. Si KlapContext no puede determinar algo con confianza, lo expone en
