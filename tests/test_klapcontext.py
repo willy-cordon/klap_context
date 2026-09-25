@@ -71,6 +71,8 @@ def test_portal_has_dashboard_and_real_views(tmp_path):
     assert "data-view='flujos'" in page
     assert "data-go='evidencia'" in page
     assert "Copiar contexto" in page
+    assert "data-go='entradas'" in page
+    assert "data-node=" in page or "map-empty" in page
 
 
 def test_cli_and_portal_ignore_scalar_stack_metadata(tmp_path, monkeypatch, capsys):

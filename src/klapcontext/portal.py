@@ -43,7 +43,7 @@ def system_map(interactions: dict) -> str:
         if edge.get("source") in points and edge.get("target") in points
     )
     boxes = "".join(
-        f"<g class='map-node'><rect x='{points[node['name']][0] - 65}' y='{points[node['name']][1] - 24}' width='130' height='48' rx='8'/>"
+        f"<g class='map-node' tabindex='0' role='button' data-node='{e(node['name'])}' data-kind='{e(node.get('type', 'componente'))}'><rect x='{points[node['name']][0] - 65}' y='{points[node['name']][1] - 24}' width='130' height='48' rx='8'/>"
         f"<text x='{points[node['name']][0]}' y='{points[node['name']][1] - 2}'>{e(node['name'])[:18]}</text>"
         f"<text class='map-kind' x='{points[node['name']][0]}' y='{points[node['name']][1] + 13}'>{e(node.get('type', 'componente'))[:18]}</text></g>"
         for node in nodes
@@ -113,10 +113,10 @@ def render(context: dict, agent_text: str, graphify_files: list[str]) -> str:
       </section>
       <section class='map-card' aria-label='Mapa de interacción del sistema'><header><div><span class='icon'>⌘</span><div><h2>Mapa del sistema</h2><p>Componentes, relaciones y puntos de entrada en una sola lectura.</p></div></div><button class='outline' data-go='tecnico'>Explorar evidencia <span>→</span></button></header>{system_map(system.get('system_interactions', {}))}</section>
       <section class='quick-grid'>
-        <article><b>{len(points)}</b><span>Puntos de entrada</span><small>CLI, HTTP, archivos o scheduler</small></article>
-        <article><b>{len(flows)}</b><span>Flujos principales</span><small>Procesos y secuencias detectadas</small></article>
-        <article><b>{len(evidence)}</b><span>Hechos confirmados</span><small>Con respaldo en el código</small></article>
-        <article class='attention'><b>{len(unknowns)}</b><span>Incertidumbres</span><small>Aspectos pendientes de validar</small></article>
+        <article data-go='entradas'><b>{len(points)}</b><span>Puntos de entrada</span><small>CLI, HTTP, archivos o scheduler</small></article>
+        <article data-go='flujos'><b>{len(flows)}</b><span>Flujos principales</span><small>Procesos y secuencias detectadas</small></article>
+        <article data-go='evidencia'><b>{len(evidence)}</b><span>Hechos confirmados</span><small>Con respaldo en el código</small></article>
+        <article class='attention' data-go='evidencia'><b>{len(unknowns)}</b><span>Pendientes de validar</span><small>Aspectos con evidencia insuficiente</small></article>
       </section>
       <section class='dashboard-bottom'><div class='compact-panel'><header><h2>Cómo se ejecuta</h2><button class='text-button' data-go='entradas'>Ver entradas →</button></header><div class='surfaces'>{surface_cards}</div></div>
       <div class='compact-panel'><header><h2>Lectura recomendada</h2><button class='text-button' data-go='flujos'>Ver flujos →</button></header><ul class='start-list'>{start_rows}</ul></div></section>
