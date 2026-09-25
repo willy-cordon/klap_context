@@ -34,8 +34,11 @@ def compile_context(root: Path, query: str, *, detail: str = "standard", max_tok
         context = build(root, {"nodes": []})
     model = context["system_model"]; limit = min(DETAIL_LIMITS[detail], max(1, max_tokens // 350)); terms = _terms(query, plan.area)
     entries = _rank(model["entry_points"], terms, limit); flows = _rank(model["main_flows"], terms, limit); files = _rank(model["important_files"], terms, limit)
-    read_first = ([{"path": item.get("file"), "reason": "Punto de entrada relacionado", "relevance": item["relevance"]} for item in entries if item.get("file")] + files)[:limit]
-    result = {"intent": plan.intent, "confidence": plan.confidence, "query": query, "area": plan.area, "detail": detail, "max_tokens": max_tokens, "entry_points": entries, "flows": flows, "symbols": _rank(model["semantic_model"]["components"], terms, limit), "files": files, "dependencies": _rank(model["dependencies"], terms, limit), "tests": _rank(context["tests"], terms, limit), "read_first": read_first, "evidence": [evidence for group in entries + flows for evidence in group.get("evidence", [])][:limit], "uncertainties": model["unknowns"], "strategy": plan.strategy}
+    exploration = model.get("exploration", {})
+    graph_files = _rank(exploration.get("files", []), terms, limit)
+    graph_paths = _rank(exploration.get("call_paths", []), terms, limit)
+    read_first = ([{"path": item.get("file"), "reason": "Punto de entrada relacionado", "relevance": item["relevance"]} for item in entries if item.get("file")] + [{"path": item["path"], "reason": "Archivo o símbolo relacionado en el grafo", "relevance": item["relevance"]} for item in graph_files] + files)[:limit]
+    result = {"intent": plan.intent, "confidence": plan.confidence, "query": query, "area": plan.area, "detail": detail, "max_tokens": max_tokens, "entry_points": entries, "flows": flows, "graph_call_paths": graph_paths, "symbols": _rank(model["semantic_model"]["components"], terms, limit), "files": files + graph_files, "coverage": exploration.get("coverage", {}), "recent_changes": _rank(model.get("recent_changes", []), terms, min(limit, 3)), "dependencies": _rank(model["dependencies"], terms, limit), "tests": _rank(context["tests"], terms, limit), "read_first": read_first, "evidence": [evidence for group in entries + flows for evidence in group.get("evidence", [])][:limit], "uncertainties": model["unknowns"], "strategy": plan.strategy}
     result["verification"] = reconcile(result["evidence"])
     result = sanitize(result)
     result["estimated_tokens"] = min(max_tokens, len(json.dumps(result, ensure_ascii=False)) // 4)

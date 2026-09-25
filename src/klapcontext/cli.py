@@ -30,14 +30,17 @@ def cmd_init(args):
     except (RuntimeError, GraphifyError) as e:
         print(f"✗ {e}", file=sys.stderr); return 1
     print("✓ Git repository detected\n✓ Graphify available\n✓ Graph generated\n✓ Engineering context generated\n✓ Agent context generated\n✓ Human portal generated")
+    coverage=context["system_model"]["exploration"]["coverage"]
+    print(f"Coverage: {coverage['code_files_with_graph_nodes']}/{coverage['eligible_code_files']} code files represented in graph ({coverage['status']}); graph nodes do not guarantee complete symbol analysis")
     stack_items = [item for values in context["stack"].values() if isinstance(values, list) for item in values]
     print(f"\nProject: {context['project']['name']}\nStack: {' / '.join(stack_items) or 'unknown'}\nContext: CURRENT\n\nHuman portal:\n.klap/index.html\n\nAgent context:\n.klap/agent-context.md")
     return 0
 
 def cmd_update(args):
-    try: generate_all(root_path(args.path), update=True)
+    try: context=generate_all(root_path(args.path), update=True)
     except (RuntimeError, GraphifyError) as e: print(f"✗ {e}", file=sys.stderr); return 1
-    print("✓ KlapContext updated"); return 0
+    coverage=context["system_model"]["exploration"]["coverage"]
+    print(f"✓ KlapContext updated; graph coverage: {coverage['code_files_with_graph_nodes']}/{coverage['eligible_code_files']} code files ({coverage['status']})"); return 0
 
 def cmd_status(args):
     root=root_path(args.path); state_file=root/".klap"/"state.json"
