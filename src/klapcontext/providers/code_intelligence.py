@@ -8,9 +8,11 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from ..scope import IndexScope
+
 
 EXCLUDED = {".git", ".klap", "vendor", "node_modules", "build", "dist", ".venv", "venv", ".test-venv"}
-INDEX_VERSION = 4
+INDEX_VERSION = 7
 
 
 @dataclass(frozen=True)
@@ -72,16 +74,40 @@ def _field_text(node, field: str, source: bytes) -> str | None:
     return _text(child, source) if child else None
 
 
+def _imports(values: list[str]) -> dict[str, str]:
+    result = {}
+    for value in values:
+        cleaned = value.strip().lstrip("\\")
+        alias_match = re.match(r"(.+?)\s+as\s+(\w+)$", cleaned, re.I)
+        qualified = alias_match.group(1).strip() if alias_match else cleaned
+        alias = alias_match.group(2) if alias_match else qualified.rsplit("\\", 1)[-1]
+        result[alias] = qualified
+    return result
+
+
+def _qualify(value: str, namespace: str | None, imports: dict[str, str]) -> str:
+    value = value.strip().lstrip("\\")
+    if not value or value.casefold() in {"self", "static", "parent"}:
+        return value
+    first, *rest = value.split("\\")
+    if first in imports:
+        return "\\".join([imports[first], *rest])
+    return f"{namespace}\\{value}" if namespace and "\\" not in value else value
+
+
 class PhpCodeIntelligenceProvider:
     """Indexes declarations and conservative structural relationships in PHP."""
     name = "php-tree-sitter"
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, scope: IndexScope | None = None):
         self.root = root.resolve()
+        self.scope = scope
         self.cache_file = self.root / ".klap" / "code-intelligence" / "php-index.json"
         self._index: dict | None = None
 
     def _files(self) -> list[Path]:
+        if self.scope is not None:
+            return sorted(self.root / path for path in self.scope.included_paths if path.casefold().endswith(".php"))
         files = []
         for directory, children, names in os.walk(self.root):
             children[:] = [child for child in children if child not in EXCLUDED]
@@ -121,6 +147,7 @@ class PhpCodeIntelligenceProvider:
         relative = path.relative_to(self.root).as_posix()
         namespace = next((_text(node.child_by_field_name("name"), source) for node in _descendants(tree.root_node) if node.type == "namespace_definition" and node.child_by_field_name("name")), None)
         imports = [_text(node, source).replace("use ", "").replace(";", "").strip() for node in _descendants(tree.root_node) if node.type == "namespace_use_clause"]
+        import_map = _imports(imports)
         symbols, relations = [], []
         for declaration in _descendants(tree.root_node):
             if declaration.type not in {"class_declaration", "interface_declaration", "trait_declaration"}:
@@ -134,12 +161,15 @@ class PhpCodeIntelligenceProvider:
             symbols.append(asdict(symbol))
             for child in declaration.children:
                 if child.type == "base_clause":
-                    relations.append(asdict(CodeRelation(qualified, _text(child, source).replace("extends", "").strip(), "EXTENDS", relative, _line(source, child.start_byte), "CONFIRMED")))
+                    relations.append(asdict(CodeRelation(qualified, _qualify(_text(child, source).replace("extends", "").strip(), namespace, import_map), "EXTENDS", relative, _line(source, child.start_byte), "CONFIRMED")))
                 if child.type == "class_interface_clause":
                     for target in [part.strip() for part in _text(child, source).replace("implements", "").split(",")]:
-                        relations.append(asdict(CodeRelation(qualified, target, "IMPLEMENTS", relative, _line(source, child.start_byte), "CONFIRMED")))
+                        relations.append(asdict(CodeRelation(qualified, _qualify(target, namespace, import_map), "IMPLEMENTS", relative, _line(source, child.start_byte), "CONFIRMED")))
             properties = self._properties(declaration, source)
             properties.update(self._constructor_properties(declaration, source))
+            properties = {name: _qualify(type_name, namespace, import_map) for name, type_name in properties.items()}
+            for property_name, type_name in properties.items():
+                relations.append(asdict(CodeRelation(qualified, type_name, "INJECTS", relative, _line(source, declaration.start_byte), "CONFIRMED", metadata={"property": property_name})))
             for method in (node for node in _descendants(declaration) if node.type == "method_declaration"):
                 method_name = _field_text(method, "name", source)
                 if not method_name:
@@ -148,13 +178,17 @@ class PhpCodeIntelligenceProvider:
                 visibility = next((_text(child, source) for child in method.children if child.type == "visibility_modifier"), None)
                 method_symbol = CodeSymbol(method_id, method_name, method_id, "constructor" if method_name == "__construct" else "method", relative, _line(source, method.start_byte), _line(source, method.end_byte), namespace, qualified, visibility)
                 symbols.append(asdict(method_symbol))
-                relations.extend(self._calls(method, source, method_id, relative, properties))
+                if method_name == "handle":
+                    event_type = re.search(r"function\s+handle\s*\(\s*([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)\s+\$", _text(method, source))
+                    if event_type:
+                        relations.append(asdict(CodeRelation(qualified, _qualify(event_type.group(1), namespace, import_map), "LISTENS_TO", relative, _line(source, method.start_byte), "CONFIRMED")))
+                relations.extend(self._calls(method, source, method_id, relative, properties, namespace, import_map))
         for function in (node for node in _descendants(tree.root_node) if node.type == "function_definition"):
             name = _field_text(function, "name", source)
             if name:
                 qualified = f"{namespace}\\{name}" if namespace else name
                 symbols.append(asdict(CodeSymbol(qualified, name, qualified, "function", relative, _line(source, function.start_byte), _line(source, function.end_byte), namespace)))
-                relations.extend(self._calls(function, source, qualified, relative, {}))
+                relations.extend(self._calls(function, source, qualified, relative, {}, namespace, import_map))
         return {"symbols": symbols, "relations": relations}
 
     def _properties(self, declaration, source: bytes) -> dict[str, str]:
@@ -190,12 +224,20 @@ class PhpCodeIntelligenceProvider:
             if variable in parameters
         }
 
-    def _calls(self, method, source: bytes, source_id: str, file: str, properties: dict[str, str]) -> list[dict]:
+    def _calls(self, method, source: bytes, source_id: str, file: str, properties: dict[str, str], namespace: str | None, imports: dict[str, str]) -> list[dict]:
         relations = []
         for node in _descendants(method):
             target, relation, confidence = None, "CALLS", "INFERRED"
             if node.type == "scoped_call_expression":
-                target = f"{_field_text(node, 'scope', source)}::{_field_text(node, 'name', source)}"; confidence = "CONFIRMED"
+                scope = _field_text(node, "scope", source) or ""
+                scope = source_id.rsplit("::", 1)[0] if scope.casefold() in {"self", "static"} else _qualify(scope, namespace, imports)
+                called = _field_text(node, "name", source)
+                if called in {"dispatch", "dispatchSync", "dispatchNow"}:
+                    target = scope
+                    relation = "DISPATCHES"
+                else:
+                    target = f"{scope}::{called}"
+                confidence = "CONFIRMED"
             elif node.type == "member_call_expression":
                 name = _field_text(node, "name", source)
                 object_node = node.child_by_field_name("object")
@@ -210,7 +252,17 @@ class PhpCodeIntelligenceProvider:
                 confidence = "INFERRED"
             elif node.type == "object_creation_expression":
                 target = _field_text(node, "name", source) or (_text(_first(node, "name"), source) if _first(node, "name") else None)
+                target = _qualify(target, namespace, imports) if target else None
                 relation = "INSTANTIATES"; confidence = "CONFIRMED"
+            elif node.type == "function_call_expression":
+                function = _field_text(node, "function", source) or _field_text(node, "name", source)
+                expression = _text(node, source)
+                if function and function.casefold() in {"event", "dispatch"}:
+                    created = re.search(r"new\s+([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)", expression)
+                    if created:
+                        target = _qualify(created.group(1), namespace, imports)
+                        relation = "DISPATCHES"
+                        confidence = "CONFIRMED"
             if target and "None" not in target:
                 relations.append(asdict(CodeRelation(source_id, target, relation, file, _line(source, node.start_byte), confidence, metadata={"expression": _text(node, source)[:240]})))
         return relations
@@ -224,6 +276,44 @@ class PhpCodeIntelligenceProvider:
 
     def callers(self, symbol: str) -> list[dict]:
         return [relation for relation in self._relations() if relation["relation"] == "CALLS" and relation["target_symbol"].endswith(symbol)][:100]
+
+    def consumers(self, symbol: str) -> list[dict]:
+        classes = {"CALLS": "direct", "INSTANTIATES": "direct", "DISPATCHES": "event", "LISTENS_TO": "event", "INJECTS": "dependency", "EXTENDS": "dependency", "IMPLEMENTS": "dependency"}
+        result = []
+        for relation in self._relations():
+            if relation["target_symbol"].endswith(symbol):
+                item = dict(relation)
+                item["consumer_type"] = classes.get(item["relation"], "possible")
+                item["explanation"] = f"{item['source_symbol']} --{item['relation']}--> {item['target_symbol']}"
+                result.append(item)
+        return result[:100]
+
+    @staticmethod
+    def _same_symbol(candidate: str, symbol: str) -> bool:
+        return candidate == symbol or candidate.endswith("\\" + symbol) or candidate.endswith("::" + symbol) or symbol.endswith(candidate)
+
+    def relationship_paths(self, symbol: str, *, depth: int = 4, max_paths: int = 50) -> list[dict]:
+        """Trace evidence-backed reverse dependencies with event semantics."""
+        relations = self._relations()
+        paths, queue = [], [(symbol, [], 0, {symbol})]
+        while queue and len(paths) < max_paths:
+            current, path, level, visited = queue.pop(0)
+            if level >= depth:
+                continue
+            # Normal reverse dependency: source relies on current target.
+            candidates = [item for item in relations if self._same_symbol(item["target_symbol"], current)]
+            # LISTENS_TO is represented listener -> event. Once a listener is a
+            # consumer, walk to its event so dispatchers can be found next.
+            candidates += [item for item in relations if item["relation"] == "LISTENS_TO" and self._same_symbol(item["source_symbol"], current)]
+            for relation in candidates:
+                next_symbol = relation["target_symbol"] if relation["relation"] == "LISTENS_TO" and self._same_symbol(relation["source_symbol"], current) else relation["source_symbol"]
+                if any(self._same_symbol(next_symbol, item) for item in visited):
+                    continue
+                step = {"source": relation["source_symbol"], "target": relation["target_symbol"], "relation": relation["relation"], "file": relation["file"], "line": relation["line"], "confidence": relation["confidence"]}
+                next_path = [*path, step]
+                paths.append({"from": next_symbol, "to": symbol, "classification": "direct" if level == 0 else "transitive", "relations": next_path})
+                queue.append((next_symbol, next_path, level + 1, {*visited, next_symbol}))
+        return paths
 
     def callees(self, symbol: str) -> list[dict]:
         return [relation for relation in self._relations() if relation["source_symbol"].endswith(symbol)][:100]
@@ -242,7 +332,8 @@ class PhpCodeIntelligenceProvider:
         return {"root": root, "nodes": sorted(visited), "edges": edges, "depth": depth, "truncated": len(visited) >= max_nodes}
 
     def impact(self, symbol: str) -> dict:
-        direct = self.callers(symbol)
+        consumers = self.consumers(symbol)
+        direct = [item for item in consumers if item["consumer_type"] == "direct"]
         indirect, seen, queue = [], {symbol}, [item["source_symbol"] for item in direct]
         while queue and len(indirect) < 50:
             current = queue.pop(0)
@@ -252,7 +343,7 @@ class PhpCodeIntelligenceProvider:
         name = symbol.split("::")[0].split("\\")[-1]
         source_files = {item["source_symbol"] for item in self._relations() if item["target_symbol"].endswith(name)}
         tests = [item["file"] for item in self._symbols() if item["qualified_name"] in source_files and "test" in item["file"].casefold()]
-        return {"symbol": symbol, "direct_callers": direct, "indirect_callers": indirect, "related_tests": sorted(set(tests)), "statement": "Relaciones estructurales potencialmente afectadas; no es una predicción de fallas."}
+        return {"symbol": symbol, "direct_callers": direct, "consumers": consumers, "relationship_paths": self.relationship_paths(symbol), "indirect_callers": indirect, "related_tests": sorted(set(tests)), "statement": "Relaciones estructurales potencialmente afectadas; no es una predicción de fallas."}
 
     def minimal_edit_context(self, symbol: str, *, max_tokens: int = 1200) -> dict:
         match = next(iter(self.find_symbol(symbol)), None)

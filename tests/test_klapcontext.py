@@ -98,8 +98,7 @@ def test_exclude_klap_is_idempotent(tmp_path, monkeypatch):
 def test_status_marks_matching_clean_context_current(tmp_path, monkeypatch, capsys):
     (tmp_path / ".klap").mkdir()
     (tmp_path / ".klap" / "state.json").write_text(json.dumps({"git_commit": "abc"}))
-    monkeypatch.setattr(cli, "commit", lambda root: "abc")
-    monkeypatch.setattr(cli, "dirty_files", lambda root: [])
+    monkeypatch.setattr(cli, "evaluate_freshness", lambda root: {"status": "CURRENT", "reason": "test snapshot"})
     assert cli.cmd_status(type("Args", (), {"path": str(tmp_path)})()) == 0
     assert "CURRENT" in capsys.readouterr().out
 
@@ -177,12 +176,14 @@ def test_php_code_intelligence_callers_graph_impact_and_minimal_context():
     assert callers[0]["source_symbol"].endswith("AuthController::login")
     graph = provider.call_graph("AuthController::login", depth=3)
     targets = {item["target_symbol"] for item in graph["edges"]}
-    assert "AuthService::authenticate" in targets and "JwtService::createToken" in targets and "AuditLogger::log" in targets
+    assert any(item.endswith("AuthService::authenticate") for item in targets)
+    assert any(item.endswith("JwtService::createToken") for item in targets)
+    assert any(item.endswith("AuditLogger::log") for item in targets)
     impact = provider.impact("AuthService::authenticate")
     assert impact["direct_callers"] and impact["related_tests"] == ["tests/Feature/AuthTest.php"]
     context = provider.minimal_edit_context("AuthService::authenticate", max_tokens=300)
     assert "function authenticate" in context["source"]
-    assert "JwtService::createToken" in {item["target_symbol"] for item in context["callees"]}
+    assert any(item["target_symbol"].endswith("JwtService::createToken") for item in context["callees"])
 
 
 def test_php_code_intelligence_reuses_cache_and_registers_provider():
@@ -211,7 +212,7 @@ def test_laravel_adapter_emits_generic_entries_and_semantic_transitions():
     endpoint = next(item for item in model["entry_points"] if item["type"] == "HTTP")
     assert endpoint["method"] == "POST" and endpoint["path"] == "/orders"
     kinds = {item["type"] for item in model["transitions"]}
-    assert {"HTTP_ENTRY", "CALL", "QUEUE_DISPATCH", "EXTERNAL_CALL"} <= kinds
+    assert {"HTTP_ENTRY", "CALL", "DISPATCHES", "EXTERNAL_CALL"} <= kinds
     flows = build(root, {"nodes": []})["flows"]
     assert any(any("OrderService::create" in step["name"] for step in flow["steps"]) for flow in flows)
 
@@ -252,6 +253,7 @@ def test_context_compiler_reuses_generated_context(tmp_path, monkeypatch):
     (root / ".klap").mkdir()
     cached = build(root, {"nodes": []})
     (root / ".klap" / "context.json").write_text(json.dumps(cached))
+    monkeypatch.setattr("klapcontext.agent.compiler.evaluate_freshness", lambda root: {"status": "CURRENT", "reason": "test"})
     monkeypatch.setattr("klapcontext.agent.compiler.build", lambda *_: (_ for _ in ()).throw(AssertionError("should not rebuild")))
     result = compile_context(root, "entender sistema")
     assert result["execution"]["context_source"] == "cached"

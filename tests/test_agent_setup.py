@@ -11,6 +11,7 @@ from klapcontext.agent_setup import (
     generate_mcp_configs,
     marker_state,
 )
+from klapcontext.scope import IndexScope, RULES_VERSION
 
 
 def context(name="sample"):
@@ -35,7 +36,7 @@ def git_repo(path: Path) -> Path:
 
 
 def generated_files(root: Path) -> None:
-    for relative in (".klap/agent-context.md", ".klap/context.json", ".klap/index.html", ".klap/graphify/graph.json"):
+    for relative in (".klap/agent-context.md", ".klap/context.json", ".klap/index.html", ".klap/graphify-out/graph.json"):
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}" if path.suffix == ".json" else "generated")
@@ -104,7 +105,8 @@ def test_mcp_config_and_doctor_report_real_files(tmp_path, monkeypatch):
     config = generate_mcp_configs(root)
     AgentInstructionsManager(root).apply(context())
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
-    (root / ".klap/state.json").write_text(json.dumps({"git_commit": head}))
+    scope = IndexScope.load(root)
+    (root / ".klap/state.json").write_text(json.dumps({"git_commit": head, "scope": {"rules_version": RULES_VERSION, "hash": scope.snapshot_hash()}}))
     result = doctor_agent(root)
     assert config["available"] and result["agents"]["valid"]
     assert result["context"]["available"] and result["graph"]["available"]
@@ -114,9 +116,13 @@ def test_mcp_config_and_doctor_report_real_files(tmp_path, monkeypatch):
 def test_context_freshness_detects_relevant_change_but_ignores_agents(tmp_path):
     root = git_repo(tmp_path)
     (root / ".klap").mkdir()
+    (root / "app.py").write_text("print('one')")
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True).stdout.strip()
-    (root / ".klap/state.json").write_text(json.dumps({"git_commit": head}))
+    scope = IndexScope.load(root)
+    (root / ".klap/state.json").write_text(json.dumps({"git_commit": head, "scope": {"rules_version": RULES_VERSION, "hash": scope.snapshot_hash()}}))
     (root / "AGENTS.md").write_text("local")
     assert context_freshness(root)["status"] == "CURRENT"
     (root / "README.md").write_text("changed")
+    assert context_freshness(root)["status"] == "CURRENT"
+    (root / "app.py").write_text("print('two')")
     assert context_freshness(root)["status"] == "STALE"

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.0 — 2026-09-27 — Context Reliability
+
+- Adds a central, configurable Index Scope applied before Graphify and reused
+  by adapters, exploration, impact and recommendations.
+- Ignores commented/string-embedded Laravel routes and schedules while
+  recording disabled declarations separately.
+- Adds normalized injection, dispatch and listener relationships with
+  explainable reverse-impact paths.
+- Centralizes freshness around commit, eligible-content hash and scope rules.
+- Replaces the MCP process smoke test with initialize, tool discovery and a
+  minimal `graph_stats` call.
+- Stores new graphs canonically in `.klap/graphify-out`; legacy copies are only
+  migrated by explicit command and are preserved as backups.
+
 ## 0.5.0
 
 - Adds safe, idempotent `AGENTS.md` onboarding with private and shared modes.

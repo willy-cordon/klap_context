@@ -5,12 +5,14 @@ from pathlib import Path
 
 from . import __version__
 from .agent_context import write as write_agent
-from .agent_setup import AgentInstructionsManager, context_freshness, doctor_agent, generate_mcp_configs, is_tracked
+from .agent_setup import AgentInstructionsManager, doctor_agent, generate_mcp_configs, is_tracked
 from .context_builder import build
-from .git import commit, dirty_files, exclude_klap, is_repository
-from .graphify import GraphifyError
+from .git import commit, exclude_klap, is_repository
+from .freshness import evaluate_freshness
+from .graphify import GraphifyError, migrate_legacy_graphs
 from .portal import write as write_portal
 from .providers import default_provider
+from .scope import IndexScope
 
 
 def root_path(value: str | None) -> Path:
@@ -23,10 +25,14 @@ def generate_all(root: Path, update: bool = False, *, shared: bool = False, allo
     exclude_klap(root)
     klap = root / ".klap"
     klap.mkdir(exist_ok=True)
+    scope = IndexScope.load(root)
     provider = default_provider()
-    graph_path = provider.generate(root, update)
-    files = provider.copy_outputs(root, klap / "graphify")
-    context = build(root, provider.load_graph(graph_path))
+    graph_path = provider.generate(root, update, scope)
+    raw_graph = provider.load_graph(graph_path)
+    graph = scope.filter_graph(raw_graph)
+    files = provider.copy_outputs(root, graph_path.parent)
+    context = build(root, graph, scope)
+    context["freshness"] = {"status": "CURRENT", "reason": "Generation completed from the recorded scope snapshot."}
     (klap / "context.json").write_text(json.dumps(context, indent=2) + "\n", encoding="utf-8")
     agent = write_agent(context, klap / "agent-context.md")
     mcp = generate_mcp_configs(root)
@@ -41,6 +47,7 @@ def generate_all(root: Path, update: bool = False, *, shared: bool = False, allo
         "provider": {"name": provider.name, "version": provider.version()},
         "klap_version": __version__,
         "agent_onboarding": setup.as_dict(),
+        "scope": {"rules_version": context["system_model"]["index_scope"]["rules_version"], "hash": scope.snapshot_hash(), "configuration": ".klap/scope.json"},
     }
     (klap / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     return context
@@ -67,6 +74,8 @@ def cmd_init(args):
     setup = context.get("agent_onboarding", {})
     print(("✓ " if setup.get("status") in {"configured", "unchanged"} else "! ") + setup.get("message", "Agent onboarding not configured"))
     coverage = context["system_model"]["exploration"]["coverage"]
+    scope = context["system_model"]["index_scope"]
+    print(f"Index scope: {scope['included_code_files']} code files included; {scope['excluded_files']} resources excluded; rules {scope['rules_version']}")
     print(f"Coverage: {coverage['code_files_with_graph_nodes']}/{coverage['eligible_code_files']} code files represented in graph ({coverage['status']}); graph nodes do not guarantee complete symbol analysis")
     stack_items = [item for values in context["stack"].values() if isinstance(values, list) for item in values]
     print(f"\nProject: {context['project']['name']}\nStack: {' / '.join(stack_items) or 'unknown'}\nContext: CURRENT\n\nHuman portal:\n.klap/index.html\n\nAgent context:\n.klap/agent-context.md")
@@ -82,28 +91,18 @@ def cmd_update(args):
         print(f"✗ {error}", file=sys.stderr)
         return 1
     coverage = context["system_model"]["exploration"]["coverage"]
-    print(f"✓ KlapContext updated; graph coverage: {coverage['code_files_with_graph_nodes']}/{coverage['eligible_code_files']} code files ({coverage['status']})")
+    scope = context["system_model"]["index_scope"]
+    print(f"✓ KlapContext updated; scope: {scope['included_code_files']} code files included, {scope['excluded_files']} excluded; graph coverage: {coverage['code_files_with_graph_nodes']}/{coverage['eligible_code_files']} ({coverage['status']})")
     return 0
 
 
 def cmd_status(args):
-    root = root_path(args.path)
-    state_file = root / ".klap" / "state.json"
-    if not state_file.exists():
+    result = evaluate_freshness(root_path(args.path))
+    if result["status"] == "UNINITIALIZED":
         print("! No KlapContext found. Run: klap init")
         return 1
-    try:
-        state = json.loads(state_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        print("Status: INVALID\nstate.json no es válido")
-        return 2
-    current = commit(root)
-    ignored = (".klap/", "graphify-out/", "AGENTS.md")
-    relevant = [path for path in dirty_files(root) if not path.replace("\\", "/").startswith(ignored)]
-    fresh = state.get("git_commit") == current and not relevant
-    reason = "El contexto coincide con el código confirmado" if fresh else "El commit analizado o archivos relevantes cambiaron"
-    print(f"Status: {'CURRENT' if fresh else 'STALE'}\n{reason}")
-    return 0 if fresh else 2
+    print(f"Status: {result['status']}\n{result['reason']}")
+    return 0 if result["status"] == "CURRENT" else 2
 
 
 def cmd_doctor(args):
@@ -115,13 +114,24 @@ def cmd_doctor(args):
         (result["freshness"]["status"] == "CURRENT", "Context is current"),
         (result["graph"]["available"], "Graphify graph available"),
         (result["mcp"]["configured"], "MCP configuration generated"),
+        (result["scope"]["included_code_files"] > 0, "Index scope contains code"),
     ]
     for ok, label in checks:
         print(("✓" if ok else "!") + " " + label)
     print(("✓" if result["mcp"]["connection_verified"] else "!") + " MCP connection " + ("verified" if result["mcp"]["connection_verified"] else "not yet verified"))
+    for name, stage in result["mcp"].get("stages", {}).items():
+        print(f"  {'✓' if stage.get('ok') else '!'} {name.replace('_', ' ').title()}: {stage.get('detail', '')}")
     if result["agents"].get("missing_paths"):
         print("Missing paths: " + ", ".join(result["agents"]["missing_paths"]))
-    return 0 if all(ok for ok, _ in checks) else 2
+    print(f"Scope: {result['scope']['included_code_files']} code files included; {result['scope']['excluded_files']} excluded")
+    for warning in result["scope"].get("warnings", []):
+        print("! Scope warning: " + warning)
+    if result["graph"].get("legacy_duplicates"):
+        print("! Legacy graph copies preserved: " + ", ".join(result["graph"]["legacy_duplicates"]))
+    required = all(ok for ok, _ in checks)
+    if getattr(args, "probe_mcp", False):
+        required = required and result["mcp"]["connection_verified"]
+    return 0 if required else 2
 
 
 def cmd_open(args):
@@ -136,7 +146,7 @@ def cmd_open(args):
 
 def cmd_agent(args):
     root = root_path(args.path)
-    graph = root / ".klap" / "graphify" / "graph.json"
+    graph = root / ".klap" / "graphify-out" / "graph.json"
     if not graph.exists():
         print("⚠ No Graphify graph found. Run: klap init", file=sys.stderr)
         return 1
@@ -153,6 +163,24 @@ def cmd_context(args):
     else:
         print(f"Intent: {result['intent']}\nÁrea: {result['area']}\nRead first:\n" + "\n".join(f"- {item.get('path', item.get('name'))}: {item['reason']}" for item in result["read_first"]))
     return 0
+
+
+def cmd_scope(args):
+    scope = IndexScope.load(root_path(args.path), write_default=False).summary()
+    if args.json:
+        print(json.dumps(scope, ensure_ascii=False, indent=2))
+        return 0
+    print(f"Index Scope rules {scope['rules_version']}\nIncluded code: {scope['included_code_files']}\nMetadata: {scope['metadata_files']}\nExcluded resources: {scope['excluded_files']}\nIgnored by Git: {scope['ignored_by_git']}")
+    for reason, count in scope["excluded_reasons"].items():
+        print(f"- {count}: {reason}")
+    print("Configuration: .klap/scope.json")
+    return 0
+
+
+def cmd_migrate_graph(args):
+    result = migrate_legacy_graphs(root_path(args.path), apply=args.apply)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["status"] in {"clean", "planned", "migrated"} else 2
 
 
 def main(argv=None):
@@ -175,6 +203,14 @@ def main(argv=None):
     command.add_argument("--agent", action="store_true", help="Check AGENTS.md and generated context")
     command.add_argument("--probe-mcp", action="store_true", help="Start Graphify MCP briefly and stop it")
     command.set_defaults(func=cmd_doctor)
+    command = subs.add_parser("migrate-graph", help="Safely plan or apply legacy graph storage migration")
+    command.add_argument("path", nargs="?", default=".")
+    command.add_argument("--apply", action="store_true", help="Move verified legacy Graphify-owned directories to .klap/backups")
+    command.set_defaults(func=cmd_migrate_graph)
+    command = subs.add_parser("scope", help="Explain included and excluded index files")
+    command.add_argument("path", nargs="?", default=".")
+    command.add_argument("--json", action="store_true")
+    command.set_defaults(func=cmd_scope)
     command = subs.add_parser("context", help="Compile compact context for an agent task")
     command.add_argument("query")
     command.add_argument("path", nargs="?", default=".")

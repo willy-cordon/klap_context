@@ -13,6 +13,7 @@ from .git import commit, recent_changes
 from .exploration import inspect
 from .semantic import SemanticModel
 from .system import deployment, documents, external_systems, purpose
+from .scope import IndexScope
 
 
 def _nodes(graph: dict) -> list[dict]:
@@ -105,18 +106,18 @@ def _interactions(flows: list[dict], systems: list[dict], stores: list[dict]) ->
 
 
 def _empty_raw() -> dict:
-    return {"routes": [], "commands": [], "scheduled_processes": [], "queue_jobs": [], "events": [], "listeners": [], "components": [], "dependencies": [], "runtime_surfaces": [], "important_files": [], "framework": None}
+    return {"routes": [], "commands": [], "scheduled_processes": [], "disabled_declarations": [], "queue_jobs": [], "events": [], "listeners": [], "listener_relations": [], "components": [], "dependencies": [], "runtime_surfaces": [], "important_files": [], "framework": None}
 
 
-def _semantic(root: Path, stack: dict) -> tuple[SemanticModel, dict]:
+def _semantic(root: Path, stack: dict, scope: IndexScope | None = None) -> tuple[SemanticModel, dict]:
     if "Laravel" in stack["frameworks"] or "Lumen" in stack["frameworks"]:
-        model = LaravelAdapter().analyze(root)
+        model = LaravelAdapter(scope).analyze(root)
         return model, model.metadata["raw"]
     if "FastAPI" in stack["frameworks"]:
-        return FastAPIAdapter().analyze(root), _empty_raw()
+        return FastAPIAdapter(scope).analyze(root), _empty_raw()
     for framework in ("Express", "NestJS"):
-        if framework in stack["frameworks"]: return NodeAdapter(framework).analyze(root), _empty_raw()
-    if "PHP" in stack["languages"]: return GenericPhpAdapter().analyze(root), _empty_raw()
+        if framework in stack["frameworks"]: return NodeAdapter(framework, scope).analyze(root), _empty_raw()
+    if "PHP" in stack["languages"]: return GenericPhpAdapter(scope).analyze(root), _empty_raw()
     return SemanticModel(stack["languages"][0] if stack["languages"] else None), _empty_raw()
 
 
@@ -130,16 +131,17 @@ def _analysis_evidence(raw: dict) -> list[dict]:
     return result
 
 
-def build(root: Path, graph: dict) -> dict:
+def build(root: Path, graph: dict, scope: IndexScope | None = None) -> dict:
+    scope = scope or IndexScope.load(root, write_default=False)
     stack, detector_evidence = detect_project(root)
     docs = documents(root); value = purpose(root, docs); systems, stores = external_systems(root); deploy, observability, _ = deployment(root)
-    semantic, raw = _semantic(root, stack); model = semantic.as_dict(); model["project_components"] = detect_components(root); points, background = model["entry_points"], model["background_tasks"]
-    exploration = inspect(root, graph, model)
+    semantic, raw = _semantic(root, stack, scope); model = semantic.as_dict(); model["project_components"] = detect_components(root); points, background = model["entry_points"], model["background_tasks"]
+    exploration = inspect(root, graph, model, scope=scope)
     runtime = _runtime(points, background, stack["frameworks"]); inputs, outputs = _io(points, systems, stores); flows = _flows(model)
     important = raw["important_files"] or ([{"path": "README.md", "role": "Documentación", "reason": "README detectado"}] if (root / "README.md").exists() else [])
     tests = [{"path": item, "reason": "Tests detectados"} for item in ("tests", "test", "phpunit.xml", "pytest.ini") if (root / item).exists()]
     story = " ".join(item for item in (value["text"], runtime["description"], "La aplicación está contenerizada con Docker." if "Docker" in deploy["tools"] else None) if item)
-    system = {"purpose": value, "project_story": {"text": story or None, "status": "CONFIRMED" if story else "UNKNOWN"}, "runtime": runtime, "framework": raw["framework"], "runtime_surfaces": raw["runtime_surfaces"], "routes": raw["routes"], "commands": raw["commands"], "scheduled_processes": raw["scheduled_processes"], "queue_jobs": raw["queue_jobs"], "events": raw["events"], "listeners": raw["listeners"], "components": raw["components"], "dependencies": raw["dependencies"], "semantic_model": model, "entry_points": points, "main_flows": flows, "system_interactions": _interactions(flows, systems, stores), "capabilities": _modules(_nodes(graph)), "inputs": inputs, "outputs": outputs, "external_systems": systems, "background_processes": background, "datastores": stores, "deployment": deploy, "observability": observability, "important_files": important, "start_here": [], "unknowns": [item for item, found in (("Propósito de negocio del proyecto", value["text"]), ("Plataforma de despliegue en producción", deploy["tools"])) if not found]}
+    system = {"purpose": value, "project_story": {"text": story or None, "status": "CONFIRMED" if story else "UNKNOWN"}, "runtime": runtime, "framework": raw["framework"], "runtime_surfaces": raw["runtime_surfaces"], "routes": raw["routes"], "commands": raw["commands"], "scheduled_processes": raw["scheduled_processes"], "disabled_declarations": raw.get("disabled_declarations", []), "queue_jobs": raw["queue_jobs"], "events": raw["events"], "listeners": raw["listeners"], "components": raw["components"], "dependencies": raw["dependencies"], "semantic_model": model, "entry_points": points, "main_flows": flows, "system_interactions": _interactions(flows, systems, stores), "capabilities": _modules(_nodes(graph)), "inputs": inputs, "outputs": outputs, "external_systems": systems, "background_processes": background, "datastores": stores, "deployment": deploy, "observability": observability, "important_files": important, "start_here": [], "unknowns": [item for item, found in (("Propósito de negocio del proyecto", value["text"]), ("Plataforma de despliegue en producción", deploy["tools"])) if not found], "index_scope": scope.summary(graph=graph)}
     system["exploration"] = exploration
     system["recent_changes"] = recent_changes(root, limit=8)
     if exploration["coverage"]["status"] == "PARTIAL":

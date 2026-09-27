@@ -7,19 +7,24 @@ from pathlib import Path
 from ..evidence import Evidence
 from ..providers.python_intelligence import analyze as analyze_python
 from ..semantic import EntryPoint, ExecutionTransition, SemanticModel
+from ..scope import IndexScope
 
 
 class FastAPIAdapter:
     name = "FastAPI"
 
+    def __init__(self, scope: IndexScope | None = None):
+        self.scope = scope
+
     def detect(self, root: Path) -> bool:
         return any("fastapi" in path.read_text(encoding="utf-8", errors="ignore").casefold() for path in (root / "pyproject.toml", root / "requirements.txt") if path.exists())
 
     def analyze(self, root: Path) -> SemanticModel:
-        components, transitions = analyze_python(root); entries = []
+        components, transitions = analyze_python(root, self.scope); entries = []
         for path in root.rglob("*.py"):
             if any(part in {".venv", "venv", ".git", ".klap"} for part in path.relative_to(root).parts): continue
             relative = path.relative_to(root).as_posix()
+            if self.scope is not None and relative not in self.scope.included_paths: continue
             try: tree = ast.parse(path.read_text(encoding="utf-8"))
             except (OSError, SyntaxError): continue
             for node in tree.body:

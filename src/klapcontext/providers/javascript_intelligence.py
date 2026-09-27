@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..semantic import ExecutionTransition, SemanticComponent
+from ..scope import IndexScope
 
 
 def _walk(node):
@@ -15,13 +16,14 @@ def _text(node, source: bytes) -> str:
     return source[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
 
 
-def analyze(root: Path) -> tuple[list[SemanticComponent], list[ExecutionTransition]]:
+def analyze(root: Path, scope: IndexScope | None = None) -> tuple[list[SemanticComponent], list[ExecutionTransition]]:
     from tree_sitter import Language, Parser
     import tree_sitter_javascript, tree_sitter_typescript
     components, transitions = [], []
     for path in sorted([*root.rglob("*.js"), *root.rglob("*.ts")]):
         if any(part in {".git", ".klap", "node_modules", "dist", "build"} for part in path.relative_to(root).parts): continue
         source = path.read_bytes(); relative = path.relative_to(root).as_posix()
+        if scope is not None and relative not in scope.included_paths: continue
         grammar = tree_sitter_typescript.language_typescript() if path.suffix == ".ts" else tree_sitter_javascript.language()
         tree = Parser(Language(grammar)).parse(source); module = relative.rsplit(".", 1)[0].replace("/", ".")
         for node in _walk(tree.root_node):

@@ -68,6 +68,16 @@ funciones ni garantiza que se hayan resuelto rutas dinámicas**. Los recorridos
 son caminos del grafo, no afirmaciones de que una ruta HTTP los ejecuta; sus
 ramas pueden requerir inspección del código original.
 
+Antes de invocar Graphify, KlapContext calcula un **Index Scope** central desde
+Git, manifests y reglas por stack. Excluye dependencias, caches, builds,
+minificados y recursos binarios, pero permite excepciones locales en
+`.klap/scope.json`. Revisalo con:
+
+```bash
+klap scope
+klap scope --json
+```
+
 ## Comandos
 
 | Comando | Descripción |
@@ -79,6 +89,8 @@ ramas pueden requerir inspección del código original.
 | `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
 | `klap context "tarea" [ruta]` | Compila un contexto focalizado reutilizando `.klap/context.json` si existe. |
 | `klap doctor --agent [ruta]` | Comprueba AGENTS.md, freshness, Graphify y configuración MCP. |
+| `klap scope [ruta]` | Explica archivos incluidos/excluidos y sus motivos. |
+| `klap migrate-graph [ruta]` | Planea la migración de grafos legacy; `--apply` preserva respaldos. |
 | `klap --version` | Muestra la versión instalada. |
 
 ## Salidas
@@ -90,13 +102,14 @@ ramas pueden requerir inspección del código original.
 ├── index.html            # portal humano, sin servidor
 ├── state.json            # metadatos de freshness
 ├── mcp/                  # configuración local reutilizable para clientes MCP
-└── graphify/             # grafo, informe y visualizaciones de Graphify
+└── graphify-out/         # único grafo canónico, informe y visualizaciones
 ```
 
 `klap agent` genera ejemplos locales para Codex, Claude Code, Cursor y clientes
 MCP genéricos. No instala agentes ni modifica configuraciones globales. Usá
-`klap doctor --agent --probe-mcp` para comprobar que Graphify MCP puede iniciar;
-eso no equivale a verificar una conexión real de un cliente.
+`klap doctor --agent --probe-mcp` realiza un handshake MCP real, descubre tools
+y ejecuta una consulta mínima `graph_stats`; falla si alguna etapa no se puede
+comprobar.
 
 Las afirmaciones incluyen evidencia y estados `CONFIRMED`, `INFERRED` o
 `UNKNOWN`. Si KlapContext no puede determinar algo con confianza, lo expone en

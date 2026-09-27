@@ -8,6 +8,9 @@ from pathlib import Path
 from .planner import ContextPlanner
 from ..context_builder import build
 from .verification import reconcile, sanitize
+from ..freshness import evaluate_freshness
+from ..graphify import canonical_graph, load_graph
+from ..scope import IndexScope
 
 DETAIL_LIMITS = {"minimal": 3, "standard": 6, "deep": 12}
 
@@ -28,10 +31,23 @@ def _rank(items: list[dict], terms: set[str], limit: int) -> list[dict]:
 def compile_context(root: Path, query: str, *, detail: str = "standard", max_tokens: int = 5000) -> dict:
     plan = ContextPlanner().plan(query, detail=detail, max_tokens=max_tokens)
     cached = root / ".klap" / "context.json"
+    freshness = evaluate_freshness(root)
+    source = "generated"
     try:
-        context = json.loads(cached.read_text(encoding="utf-8")) if cached.exists() else build(root, {"nodes": []})
+        if cached.exists() and freshness["status"] == "CURRENT":
+            context = json.loads(cached.read_text(encoding="utf-8"))
+            source = "cached"
+        else:
+            scope = IndexScope.load(root, write_default=False)
+            raw_graph = load_graph(canonical_graph(root)) if canonical_graph(root).exists() else {"nodes": []}
+            context = build(root, scope.filter_graph(raw_graph), scope)
+            source = "generated_from_canonical_graph" if raw_graph.get("nodes") or raw_graph.get("graph") else "generated_without_graph"
+            if freshness["status"] == "STALE":
+                context["system_model"]["unknowns"].append("El snapshot persistido está desactualizado; ejecutá klap update antes de confiar en el índice.")
     except (OSError, json.JSONDecodeError):
-        context = build(root, {"nodes": []})
+        scope = IndexScope.load(root, write_default=False)
+        context = build(root, {"nodes": []}, scope)
+        source = "generated_without_graph"
     model = context["system_model"]; limit = min(DETAIL_LIMITS[detail], max(1, max_tokens // 350)); terms = _terms(query, plan.area)
     entries = _rank(model["entry_points"], terms, limit); flows = _rank(model["main_flows"], terms, limit); files = _rank(model["important_files"], terms, limit)
     exploration = model.get("exploration", {})
@@ -42,7 +58,7 @@ def compile_context(root: Path, query: str, *, detail: str = "standard", max_tok
     result["verification"] = reconcile(result["evidence"])
     result = sanitize(result)
     result["estimated_tokens"] = min(max_tokens, len(json.dumps(result, ensure_ascii=False)) // 4)
-    result["execution"] = {"capabilities": plan.capabilities, "providers": plan.providers, "files_selected": len(result["read_first"]), "sections_selected": len(plan.sections), "adaptive": True, "context_source": "cached" if cached.exists() else "generated"}
+    result["execution"] = {"capabilities": plan.capabilities, "providers": plan.providers, "files_selected": len(result["read_first"]), "sections_selected": len(plan.sections), "adaptive": True, "context_source": source, "freshness": freshness}
     return result
 
 

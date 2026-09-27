@@ -8,6 +8,7 @@ from pathlib import Path
 from ..evidence import Evidence, from_match
 from ..providers.code_intelligence import PhpCodeIntelligenceProvider
 from ..semantic import BackgroundTask, Dependency, EntryPoint, Event, EventHandler, ExecutionTransition, SemanticComponent, SemanticModel
+from ..scope import IndexScope
 
 
 def _read(path: Path) -> str:
@@ -84,25 +85,62 @@ def _group_spans(text: str) -> list[tuple[int, int, str, list[str]]]:
     return groups
 
 
-def _comment_spans(text: str) -> list[tuple[int, int]]:
-    """Offsets covered by PHP line or block comments, preserving source lines."""
-    return [(match.start(), match.end()) for match in re.finditer(r"//[^\n]*|/\*.*?\*/", text, re.S)]
+def _comment_spans(text: str, *, include_strings: bool = True) -> list[tuple[int, int]]:
+    """Offsets covered by comments and, optionally, string literals using PHP AST."""
+    try:
+        from tree_sitter import Language, Parser
+        import tree_sitter_php
+
+        source = text.encode("utf-8")
+        tree = Parser(Language(tree_sitter_php.language_php())).parse(source)
+        spans = []
+        stack = [tree.root_node]
+        inactive_types = {"comment"}
+        if include_strings:
+            inactive_types.update({"string", "encapsed_string", "heredoc", "nowdoc"})
+        while stack:
+            node = stack.pop()
+            if node.type in inactive_types:
+                start = len(source[:node.start_byte].decode("utf-8", errors="replace"))
+                end = len(source[:node.end_byte].decode("utf-8", errors="replace"))
+                spans.append((start, end))
+                continue
+            stack.extend(node.children)
+        return spans
+    except (ImportError, ValueError):
+        # Conservative fallback for environments where optional parsing is not
+        # available. The package normally ships tree-sitter-php.
+        return [(match.start(), match.end()) for match in re.finditer(r"//[^\n]*|\#[^\n]*|/\*.*?\*/", text, re.S)]
 
 
-def _routes(root: Path) -> tuple[list[dict], list[dict]]:
-    routes, scheduled = [], []
+def _active(offset: int, spans: list[tuple[int, int]]) -> bool:
+    return not any(start <= offset < end for start, end in spans)
+
+
+def _code_only(text: str) -> str:
+    chars = list(text)
+    for start, end in _comment_spans(text, include_strings=False):
+        for index in range(start, min(end, len(chars))):
+            if chars[index] != "\n":
+                chars[index] = " "
+    return "".join(chars)
+
+
+def _routes(root: Path) -> tuple[list[dict], list[dict], list[dict]]:
+    routes, scheduled, disabled = [], [], []
     directory = root / "routes"
     if not directory.is_dir():
-        return routes, scheduled
+        return routes, scheduled, disabled
     route_pattern = re.compile(r"(?:Route|\$app|\$router)(?:::|->)(get|post|put|patch|delete|options|any)\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*(.+?)\);", re.S | re.I)
     resource_pattern = re.compile(r"Route::(?:api)?resource\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)::class", re.I)
-    schedule_pattern = re.compile(r"Schedule::(?:command|job)\s*\(\s*['\"]([^'\"]+)['\"]\s*\).*?->([A-Za-z]\w*)\s*\(", re.S)
+    schedule_pattern = re.compile(r"Schedule::(?:command|job)\s*\(\s*['\"]([^'\"]+)['\"]\s*\)([^;]*);", re.S)
     for file in directory.glob("*.php"):
         text = _read(file)
         groups = _group_spans(text)
         comments = _comment_spans(text)
         for match in route_pattern.finditer(text):
-            if any(start <= match.start() < end for start, end in comments):
+            if not _active(match.start(), comments):
+                disabled.append({"kind": "route", "path": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "status": "commented_or_disabled"})
                 continue
             method, uri, target = match.groups()
             handler = _symbol(target)
@@ -117,23 +155,44 @@ def _routes(root: Path) -> tuple[list[dict], list[dict]]:
             framework = "Lumen" if "lumen-framework" in _read(root / "composer.json") else "Laravel"
             routes.append({"type": "http", "method": method.upper(), "uri": full_uri, "name": name, "path": str(file.relative_to(root)), "source": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "target": handler, "handler": handler, "middleware": middleware, "status": "CONFIRMED", "evidence": _e(root, file, match.start(), f"Declaración de ruta {framework}", symbol=name)})
         for match in resource_pattern.finditer(text):
+            if not _active(match.start(), comments):
+                disabled.append({"kind": "route", "path": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "status": "commented_or_disabled"})
+                continue
             resource, controller = match.groups()
             name = f"RESOURCE /{resource.lstrip('/')}"
             routes.append({"type": "http", "method": "RESOURCE", "uri": "/" + resource.lstrip("/"), "name": name, "path": str(file.relative_to(root)), "source": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "target": controller.split("\\")[-1], "handler": controller.split("\\")[-1], "middleware": [], "status": "INFERRED", "evidence": _e(root, file, match.start(), "Declaración resource de Laravel", symbol=name, status="INFERRED")})
         if file.name == "console.php":
             for match in schedule_pattern.finditer(text):
-                command, frequency = match.groups()
-                scheduled.append({"name": command, "type": "scheduled_command", "schedule": frequency, "path": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "status": "CONFIRMED", "evidence": _e(root, file, match.start(), "Comando programado de Laravel", symbol=command)})
-    return routes, scheduled
+                command, chain = match.groups()
+                line = text.count("\n", 0, match.start()) + 1
+                frequency_match = re.search(r"->([A-Za-z]\w*)\s*\((.*?)\)", chain, re.S)
+                frequency = frequency_match.group(1) if frequency_match else None
+                expression = frequency_match.group(2).strip().strip("'\"") if frequency_match else None
+                if not _active(match.start(), comments):
+                    disabled.append({"kind": "scheduled_command", "name": command, "path": str(file.relative_to(root)), "line": line, "status": "commented_or_disabled"})
+                    continue
+                status = "CONFIRMED" if frequency else "INFERRED"
+                scheduled.append({"name": command, "type": "scheduled_command", "schedule": frequency, "expression": expression, "path": str(file.relative_to(root)), "line": line, "status": status, "evidence": _e(root, file, match.start(), "Comando programado de Laravel", symbol=command, status=status)})
+    return routes, scheduled, disabled
 
 
-def _scheduled_kernel(root: Path) -> list[dict]:
+def _scheduled_kernel(root: Path) -> tuple[list[dict], list[dict]]:
     kernel = root / "app" / "Console" / "Kernel.php"
     if not kernel.exists():
-        return []
+        return [], []
     text = _read(kernel)
-    pattern = re.compile(r"\$schedule->(?:command|job)\s*\(\s*['\"]([^'\"]+)['\"]\s*\).*?->([A-Za-z]\w*)\s*\(", re.S)
-    return [{"name": match.group(1), "type": "scheduled_command", "schedule": match.group(2), "path": str(kernel.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "status": "CONFIRMED", "evidence": _e(root, kernel, match.start(), "Scheduler de Laravel", symbol=match.group(1))} for match in pattern.finditer(text)]
+    spans = _comment_spans(text)
+    pattern = re.compile(r"\$schedule->(?:command|job)\s*\(\s*['\"]([^'\"]+)['\"]\s*\)([^;]*);", re.S)
+    active, disabled = [], []
+    for match in pattern.finditer(text):
+        line = text.count("\n", 0, match.start()) + 1
+        if not _active(match.start(), spans):
+            disabled.append({"kind": "scheduled_command", "name": match.group(1), "path": str(kernel.relative_to(root)), "line": line, "status": "commented_or_disabled"})
+            continue
+        frequency = re.search(r"->([A-Za-z]\w*)\s*\((.*?)\)", match.group(2), re.S)
+        status = "CONFIRMED" if frequency else "INFERRED"
+        active.append({"name": match.group(1), "type": "scheduled_command", "schedule": frequency.group(1) if frequency else None, "expression": frequency.group(2).strip().strip("'\"") if frequency else None, "path": str(kernel.relative_to(root)), "line": line, "status": status, "evidence": _e(root, kernel, match.start(), "Scheduler de Laravel", symbol=match.group(1), status=status)})
+    return active, disabled
 
 
 def _classes(root: Path, folder: str, kind: str, predicate=None) -> list[dict]:
@@ -143,34 +202,63 @@ def _classes(root: Path, folder: str, kind: str, predicate=None) -> list[dict]:
     result = []
     for file in directory.rglob("*.php"):
         text = _read(file)
-        if predicate and not predicate(text):
+        spans = _comment_spans(text)
+        active_text = _code_only(text)
+        if predicate and not predicate(active_text):
             continue
-        name = file.stem
-        match = re.search(r"\bclass\s+(\w+)", text)
-        if match:
-            name = match.group(1)
-        result.append({"name": name, "type": kind, "path": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1 if match else 1, "status": "CONFIRMED", "evidence": _e(root, file, match.start() if match else 0, f"Clase Laravel de tipo {kind}", symbol=name)})
+        match = re.search(r"\bclass\s+(\w+)", active_text)
+        if not match:
+            continue
+        name = match.group(1)
+        result.append({"name": name, "type": kind, "path": str(file.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "status": "CONFIRMED", "evidence": _e(root, file, match.start(), f"Clase Laravel de tipo {kind}", symbol=name)})
     return result
 
 
+def _listener_relations(root: Path, listeners: list[dict]) -> list[dict]:
+    relations = []
+    for listener in listeners:
+        path = root / listener["path"]
+        text = _read(path)
+        active = _code_only(text)
+        match = re.search(r"function\s+handle\s*\(\s*([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)\s+\$", active)
+        if match:
+            relations.append({"source": listener["name"], "target": match.group(1).split("\\")[-1], "type": "LISTENS_TO", "file": listener["path"], "line": text.count("\n", 0, match.start()) + 1, "status": "CONFIRMED", "evidence": _e(root, path, match.start(), "Tipo de evento en handler de listener", symbol=listener["name"])})
+    provider = root / "app" / "Providers" / "EventServiceProvider.php"
+    if provider.exists():
+        text = _read(provider)
+        active = _code_only(text)
+        pattern = re.compile(r"([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)::class\s*=>\s*\[(.*?)\]", re.S)
+        for match in pattern.finditer(active):
+            event = match.group(1).split("\\")[-1]
+            for listener in re.findall(r"([A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*)::class", match.group(2)):
+                relations.append({"source": listener.split("\\")[-1], "target": event, "type": "LISTENS_TO", "file": str(provider.relative_to(root)), "line": text.count("\n", 0, match.start()) + 1, "status": "CONFIRMED", "evidence": _e(root, provider, match.start(), "Registro explícito de listener", symbol=listener)})
+    unique = {}
+    for relation in relations:
+        unique[(relation["source"], relation["target"], relation["type"])] = relation
+    return list(unique.values())
+
+
 def analyze(root: Path) -> dict:
-    routes, scheduled = _routes(root)
-    scheduled.extend(_scheduled_kernel(root))
+    routes, scheduled, disabled = _routes(root)
+    kernel_scheduled, kernel_disabled = _scheduled_kernel(root)
+    scheduled.extend(kernel_scheduled)
+    disabled.extend(kernel_disabled)
     dependencies, versions = _composer(root)
     commands = _classes(root, "app/Console/Commands", "artisan_command")
     for command in commands:
         text = _read(root / command["path"])
-        signature = re.search(r"(?:protected|public)\s+\$signature\s*=\s*['\"]([^'\"]+)", text)
+        signature = re.search(r"(?:protected|public)\s+\$signature\s*=\s*['\"]([^'\"]+)", _code_only(text))
         if signature:
             command["name"] = signature.group(1)
             command["evidence"] = _e(root, root / command["path"], signature.start(), "Firma de comando Artisan", symbol=command["name"])
     jobs = _classes(root, "app/Jobs", "queue_job", lambda text: "ShouldQueue" in text)
     for job in jobs:
         text = _read(root / job["path"])
-        queue = re.search(r"(?:public|protected)\s+\$queue\s*=\s*['\"]([^'\"]+)", text)
+        queue = re.search(r"(?:public|protected)\s+\$queue\s*=\s*['\"]([^'\"]+)", _code_only(text))
         job["queue"] = queue.group(1) if queue else None
     events = _classes(root, "app/Events", "event")
     listeners = _classes(root, "app/Listeners", "listener")
+    listener_relations = _listener_relations(root, listeners)
     components = []
     for folder, kind in (("app/Http/Controllers", "controller"), ("app/Http/Middleware", "middleware"), ("app/Services", "service"), ("app/Repositories", "repository"), ("app/Models", "model"), ("database/migrations", "migration"), ("database/seeders", "seeder")):
         components.extend(_classes(root, folder, kind))
@@ -184,13 +272,16 @@ def analyze(root: Path) -> dict:
             surfaces.append({"type": kind, "label": label, "count": len(values), "items": values})
     framework = versions["framework"] or "Laravel"
     package = versions["package"] or "laravel/framework"
-    return {"framework": {"name": framework, "version": versions["version"], "php_version": versions["php"], "status": "CONFIRMED", "evidence": [Evidence("manifest", "composer.json", f"{package} declarado", "CONFIRMED", 1.0, symbol=package).as_dict()]}, "routes": routes, "commands": commands, "scheduled_processes": scheduled, "queue_jobs": jobs, "events": events, "listeners": listeners, "components": components, "dependencies": dependencies, "runtime_surfaces": surfaces, "important_files": important}
+    return {"framework": {"name": framework, "version": versions["version"], "php_version": versions["php"], "status": "CONFIRMED", "evidence": [Evidence("manifest", "composer.json", f"{package} declarado", "CONFIRMED", 1.0, symbol=package).as_dict()]}, "routes": routes, "commands": commands, "scheduled_processes": scheduled, "disabled_declarations": disabled, "queue_jobs": jobs, "events": events, "listeners": listeners, "listener_relations": listener_relations, "components": components, "dependencies": dependencies, "runtime_surfaces": surfaces, "important_files": important}
 
 
 class LaravelAdapter:
     """Translate Laravel conventions into the shared semantic vocabulary."""
 
     name = "Laravel"
+
+    def __init__(self, scope: IndexScope | None = None):
+        self.scope = scope
 
     def detect(self, root: Path) -> bool:
         return (root / "composer.json").exists() and "laravel/framework" in _read(root / "composer.json")
@@ -215,18 +306,20 @@ class LaravelAdapter:
         # Structural calls are language-level evidence; Laravel gives the framework
         # meaning to dispatch and HTTP client conventions without leaking that meaning
         # into consumers of this model.
-        index = PhpCodeIntelligenceProvider(root).index()
+        index = PhpCodeIntelligenceProvider(root, self.scope).index()
         for relation in index["relations"]:
             transition_type = "CALL" if relation["relation"] == "CALLS" else relation["relation"]
             target = relation["target_symbol"]
             expression = relation.get("metadata", {}).get("expression", "")
             if target.endswith("::dispatch"):
-                transition_type = "QUEUE_DISPATCH"
+                transition_type = "DISPATCHES"
                 target = target.rsplit("::", 1)[0]
             elif target.startswith("Http::") or "Http::" in expression:
                 transition_type = "EXTERNAL_CALL"
             evidence = [Evidence("code", relation["file"], "Relación estructural PHP", relation["confidence"], 1.0 if relation["confidence"] == "CONFIRMED" else .7, line=relation["line"], symbol=relation["source_symbol"]).as_dict()]
             transitions.append(ExecutionTransition(relation["source_symbol"], target, transition_type, relation["file"], relation["line"], relation["confidence"], relation["provider"], evidence, relation.get("metadata", {})))
+        for relation in raw.get("listener_relations", []):
+            transitions.append(ExecutionTransition(relation["source"], relation["target"], relation["type"], relation["file"], relation["line"], relation["status"], "laravel", relation["evidence"]))
         background = [BackgroundTask(item["name"], "SCHEDULED" if item["type"] == "scheduled_command" else "QUEUE", item.get("schedule"), item.get("name"), item["path"], item["status"], item["evidence"]) for item in raw["scheduled_processes"] + raw["queue_jobs"]]
         events = [Event(item["name"], item["path"], item["status"], item["evidence"]) for item in raw["events"]]
         handlers = [EventHandler(item["name"], file=item["path"], status=item["status"], evidence=item["evidence"]) for item in raw["listeners"]]

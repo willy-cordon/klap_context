@@ -1,16 +1,20 @@
 """Safe, idempotent onboarding for AGENTS.md-compatible coding agents."""
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .git import commit, dirty_files, is_repository, run_git
+from .git import is_repository, run_git
 from .graphify import command_prefix
+from .freshness import evaluate_freshness
+from .scope import IndexScope
+from .graphify import legacy_graphs
 
 START = "<!-- KLAPCONTEXT:START -->"
 END = "<!-- KLAPCONTEXT:END -->"
@@ -46,26 +50,13 @@ def marker_state(text: str) -> str:
 
 
 def context_freshness(root: Path) -> dict:
-    state_file = root / ".klap" / "state.json"
-    if not state_file.exists():
-        return {"status": "MISSING", "reason": "No existe .klap/state.json"}
-    try:
-        state = json.loads(state_file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"status": "INVALID", "reason": "state.json no es válido"}
-    current = commit(root)
-    ignored = (".klap/", "graphify-out/", AGENT_FILE)
-    relevant = [path for path in dirty_files(root) if not path.replace("\\", "/").startswith(ignored)]
-    if state.get("git_commit") != current:
-        return {"status": "STALE", "reason": "El commit analizado no coincide con HEAD", "changed_files": relevant}
-    if relevant:
-        return {"status": "STALE", "reason": "Hay cambios relevantes sin confirmar", "changed_files": relevant}
-    return {"status": "CURRENT", "reason": "El contexto coincide con el código confirmado", "changed_files": []}
+    """Compatibility alias for callers introduced before the shared service."""
+    return evaluate_freshness(root)
 
 
 def generate_mcp_configs(root: Path) -> dict:
     """Write local examples only; never mutate global agent configuration."""
-    graph = (root / ".klap" / "graphify" / "graph.json").resolve()
+    graph = (root / ".klap" / "graphify-out" / "graph.json").resolve()
     directory = root / ".klap" / "mcp"
     directory.mkdir(parents=True, exist_ok=True)
     prefix = command_prefix()
@@ -141,14 +132,16 @@ This repository has been analyzed by KlapContext.
 - `.klap/agent-context.md`
 - `.klap/context.json`
 - `.klap/index.html`
-- `.klap/graphify/graph.json`
+- `.klap/graphify-out/graph.json`
 - `.klap/mcp/README.md`
+- `.klap/scope.json` (index include/exclude configuration)
 
 ### Working rules
 
 - Respect existing architecture, conventions and contracts.
 - Prefer focused Graphify queries over broad repository searches.
 - Never modify code based only on generated context; verify the source first.
+- If scope coverage is partial, inspect `system_model.index_scope` before trusting recommendations.
 - Preserve existing contracts unless the task explicitly requires changing them.
 
 {END}"""
@@ -230,35 +223,60 @@ class AgentInstructionsManager:
             return {"status": "missing", "valid": False, "message": "AGENTS.md no existe"}
         text = self.path.read_text(encoding="utf-8")
         state = marker_state(text)
-        paths = [".klap/agent-context.md", ".klap/context.json", ".klap/index.html", ".klap/graphify/graph.json"]
+        paths = [".klap/agent-context.md", ".klap/context.json", ".klap/index.html", ".klap/graphify-out/graph.json"]
         missing = [path for path in paths if not (self.root / path).exists()]
         return {"status": state, "valid": state == "valid" and not missing, "missing_paths": missing, "message": "Configuración válida" if state == "valid" and not missing else "Configuración incompleta"}
 
 
-def probe_graphify_mcp(root: Path, timeout: float = 2.0) -> dict:
-    graph = root / ".klap" / "graphify" / "graph.json"
-    prefix = command_prefix()
-    if not prefix or not graph.exists():
-        return {"startable": False, "connection_verified": False, "reason": "Graphify o graph.json no disponible"}
-    command = [sys.executable, "-m", "graphify.serve", str(graph)]
-    process = subprocess.Popen(command, cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+async def _probe_graphify_mcp_async(graph: Path) -> dict:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    stages = {
+        "graph_present": {"ok": graph.exists(), "detail": "Canonical graph is readable" if graph.exists() else "Canonical graph is missing"},
+        "server_launch": {"ok": False, "detail": "Not attempted"},
+        "mcp_handshake": {"ok": False, "detail": "Not attempted"},
+        "tool_discovery": {"ok": False, "detail": "Not attempted"},
+        "minimal_query": {"ok": False, "detail": "Not attempted"},
+    }
+    if not graph.exists():
+        return {"startable": False, "connection_verified": False, "reason": "Canonical graph is missing", "stages": stages}
+    parameters = StdioServerParameters(command=sys.executable, args=["-m", "graphify.serve", str(graph)])
+    async with stdio_client(parameters) as (reader, writer):
+        stages["server_launch"] = {"ok": True, "detail": "stdio process started"}
+        async with ClientSession(reader, writer) as session:
+            initialized = await session.initialize()
+            server_name = getattr(getattr(initialized, "serverInfo", None), "name", "unknown")
+            stages["mcp_handshake"] = {"ok": True, "detail": f"Initialized server {server_name}"}
+            listing = await session.list_tools()
+            tools = sorted(tool.name for tool in listing.tools)
+            stages["tool_discovery"] = {"ok": bool(tools), "detail": f"Discovered {len(tools)} tool(s)", "tools": tools}
+            if "graph_stats" not in tools:
+                return {"startable": True, "connection_verified": False, "reason": "graph_stats tool is unavailable", "stages": stages}
+            result = await session.call_tool("graph_stats", {})
+            ok = not bool(getattr(result, "isError", False))
+            stages["minimal_query"] = {"ok": ok, "detail": "graph_stats returned successfully" if ok else "graph_stats returned an MCP error"}
+            return {"startable": True, "connection_verified": all(stage["ok"] for stage in stages.values()), "reason": "MCP handshake, tool discovery and minimal query succeeded" if ok else "Minimal MCP query failed", "stages": stages}
+
+
+def probe_graphify_mcp(root: Path, timeout: float = 8.0) -> dict:
+    graph = root / ".klap" / "graphify-out" / "graph.json"
+    if importlib.util.find_spec("graphify.serve") is None:
+        return {"startable": False, "connection_verified": False, "reason": "graphify.serve no está instalado en el intérprete actual", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": "Python module unavailable"}}}
     try:
-        process.wait(timeout=timeout)
-        return {"startable": process.returncode == 0, "connection_verified": False, "reason": "El proceso terminó sin una sesión MCP"}
-    except subprocess.TimeoutExpired:
-        process.terminate()
-        try:
-            process.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            process.kill()
-        return {"startable": True, "connection_verified": False, "reason": "El servidor inició; no se verificó conexión de un cliente"}
+        return asyncio.run(asyncio.wait_for(_probe_graphify_mcp_async(graph), timeout=timeout))
+    except TimeoutError:
+        return {"startable": False, "connection_verified": False, "reason": f"MCP probe timed out after {timeout:g}s", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": "Timeout"}}}
+    except Exception as error:
+        return {"startable": False, "connection_verified": False, "reason": f"MCP probe failed: {type(error).__name__}: {error}", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": type(error).__name__}}}
 
 
 def doctor_agent(root: Path, *, probe_mcp: bool = False) -> dict:
     manager = AgentInstructionsManager(root)
     agents = manager.validate()
     freshness = context_freshness(root)
-    graph = root / ".klap" / "graphify" / "graph.json"
+    graph = root / ".klap" / "graphify-out" / "graph.json"
     mcp_files = [root / ".klap" / "mcp" / "generic.json", root / ".klap" / "mcp" / "codex.toml"]
-    mcp_probe = probe_graphify_mcp(root) if probe_mcp else {"startable": bool(command_prefix() and graph.exists()), "connection_verified": False, "reason": "Use --probe-mcp para comprobar el arranque"}
-    return {"agents": agents, "context": {"available": (root / ".klap" / "agent-context.md").exists() and (root / ".klap" / "context.json").exists()}, "freshness": freshness, "graph": {"available": graph.exists()}, "mcp": {"configured": all(path.exists() for path in mcp_files), **mcp_probe}}
+    scope = IndexScope.load(root, write_default=False).summary()
+    mcp_probe = probe_graphify_mcp(root) if probe_mcp else {"startable": bool(command_prefix() and graph.exists()), "connection_verified": False, "reason": "Use --probe-mcp para comprobar el protocolo MCP", "stages": {}}
+    return {"agents": agents, "context": {"available": (root / ".klap" / "agent-context.md").exists() and (root / ".klap" / "context.json").exists()}, "freshness": freshness, "scope": scope, "graph": {"available": graph.exists(), "canonical": ".klap/graphify-out/graph.json", "legacy_duplicates": legacy_graphs(root)}, "mcp": {"configured": all(path.exists() for path in mcp_files), **mcp_probe}}

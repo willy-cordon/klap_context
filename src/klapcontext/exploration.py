@@ -5,6 +5,8 @@ import os
 from collections import defaultdict
 from pathlib import Path
 
+from .scope import IndexScope
+
 EXCLUDED = {".git", ".klap", "graphify-out", "node_modules", "vendor", ".venv", "venv", "build", "dist", "__pycache__"}
 CODE_EXTENSIONS = {".py", ".php", ".cs", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".rb", ".kt", ".vue", ".swift", ".cpp", ".c", ".h"}
 CALL_RELATIONS = {"calls", "invokes", "dispatches", "calls_method"}
@@ -34,24 +36,28 @@ def _edges(graph: dict) -> list[dict]:
     return []
 
 
-def inspect(root: Path, graph: dict, semantic: dict, *, max_files: int = 10000) -> dict:
+def inspect(root: Path, graph: dict, semantic: dict, *, scope: IndexScope | None = None, max_files: int = 10000) -> dict:
     """Keep source paths and graph relationships intact, with explicit limits."""
     nodes = graph.get("nodes", [])
     if not isinstance(nodes, list):
         nodes = []
     by_id = {str(n["id"]): n for n in nodes if isinstance(n, dict) and n.get("id") is not None}
     files: dict[str, dict] = {}
-    for directory, children, names in os.walk(root):
-        children[:] = sorted(c for c in children if c not in EXCLUDED)
-        for name in sorted(names):
-            path = _path(root, str(Path(directory) / name))
-            if path:
-                files[path] = {"path": path, "symbols": [], "analyzed": False}
+    if scope is not None:
+        for entry in [*scope.included, *scope.metadata][:max_files]:
+            files[entry.path] = {"path": entry.path, "symbols": [], "analyzed": False, "scope_reason": entry.reason}
+    else:
+        for directory, children, names in os.walk(root):
+            children[:] = sorted(c for c in children if c not in EXCLUDED)
+            for name in sorted(names):
+                path = _path(root, str(Path(directory) / name))
+                if path:
+                    files[path] = {"path": path, "symbols": [], "analyzed": False}
+                if len(files) >= max_files:
+                    break
             if len(files) >= max_files:
                 break
-        if len(files) >= max_files:
-            break
-    eligible = {path for path in files if Path(path).suffix.lower() in CODE_EXTENSIONS}
+    eligible = scope.included_paths if scope is not None else {path for path in files if Path(path).suffix.lower() in CODE_EXTENSIONS}
     analyzed: set[str] = set()
     for node in nodes:
         if not isinstance(node, dict):

@@ -5,17 +5,20 @@ import ast
 from pathlib import Path
 
 from ..semantic import ExecutionTransition, SemanticComponent
+from ..scope import IndexScope
 
 
 EXCLUDED = {".git", ".klap", ".venv", "venv", "node_modules", "build", "dist", "__pycache__"}
 
 
-def analyze(root: Path) -> tuple[list[SemanticComponent], list[ExecutionTransition]]:
+def analyze(root: Path, scope: IndexScope | None = None) -> tuple[list[SemanticComponent], list[ExecutionTransition]]:
     components, transitions = [], []
     for path in sorted(root.rglob("*.py")):
         if any(part in EXCLUDED for part in path.relative_to(root).parts):
             continue
         relative = path.relative_to(root).as_posix()
+        if scope is not None and relative not in scope.included_paths:
+            continue
         try: tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
         except (OSError, SyntaxError): continue
         module = relative.removesuffix(".py").replace("/", ".")

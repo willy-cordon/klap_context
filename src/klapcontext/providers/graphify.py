@@ -4,13 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from .. import graphify
+from ..scope import IndexScope
 
 
 class GraphifyProvider:
     name = "graphify"
 
-    def generate(self, root: Path, update: bool = False) -> Path:
-        return graphify.generate(root, update)
+    def generate(self, root: Path, update: bool = False, scope: IndexScope | None = None) -> Path:
+        return graphify.generate(root, update, scope)
 
     def load_graph(self, graph: Path) -> dict:
         return graphify.load_graph(graph)

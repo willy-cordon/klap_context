@@ -6,6 +6,7 @@ from pathlib import Path
 from ..evidence import Evidence
 from ..providers.code_intelligence import PhpCodeIntelligenceProvider
 from ..semantic import EntryPoint, ExecutionTransition, SemanticComponent, SemanticModel
+from ..scope import IndexScope
 
 
 def _evidence(file: str, line: int, symbol: str, reason: str, status: str = "CONFIRMED") -> list[dict]:
@@ -17,11 +18,14 @@ class GenericPhpAdapter:
 
     name = "generic-php"
 
+    def __init__(self, scope: IndexScope | None = None):
+        self.scope = scope
+
     def detect(self, root: Path) -> bool:
         return any(root.rglob("*.php"))
 
     def analyze(self, root: Path) -> SemanticModel:
-        provider = PhpCodeIntelligenceProvider(root)
+        provider = PhpCodeIntelligenceProvider(root, self.scope)
         index = provider.index()
         components = [SemanticComponent(item["qualified_name"], item["type"], item["file"], item["qualified_name"], evidence=_evidence(item["file"], item["start_line"], item["qualified_name"], "Símbolo PHP detectado")) for item in index["symbols"]]
         transitions = [ExecutionTransition(item["source_symbol"], item["target_symbol"], "CALL" if item["relation"] == "CALLS" else item["relation"], item["file"], item["line"], item["confidence"], item["provider"], _evidence(item["file"], item["line"], item["source_symbol"], "Relación estructural PHP", item["confidence"]), item.get("metadata", {})) for item in index["relations"]]
