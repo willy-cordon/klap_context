@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 — 2026-10-11 — Portal compatibility fix
+
+- Fixes the offline portal navigation template for Python 3.10 and 3.11.
+- Publishes the Charcoal + Cyan console portal under the matching package version.
+
 ## 0.7.0 — 2026-10-10 — Pluggable Analysis Providers
 
 - Introduces capability-based provider contracts, registry, resolver, normalized
