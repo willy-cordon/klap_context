@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -13,6 +14,32 @@ from .scope import IndexScope
 
 class GraphifyError(RuntimeError):
     pass
+
+
+@contextmanager
+def _scoped_graphifyignore(root: Path, scope: IndexScope):
+    """Apply IndexScope through Graphify's supported ignore-file contract.
+
+    Graphify releases in the supported range do not consistently implement an
+    ``extract --exclude`` flag (and some Windows builds terminate when it is
+    supplied).  Preserve any project-owned file byte-for-byte and expose the
+    generated rules only for the duration of extraction.
+    """
+    path = root / ".graphifyignore"
+    existed = path.exists()
+    original = path.read_bytes() if existed else None
+    try:
+        existing = original.decode("utf-8-sig", errors="replace") if original is not None else ""
+        generated = "\n".join(scope.graphify_excludes())
+        separator = "" if not existing or existing.endswith(("\n", "\r")) else "\n"
+        content = existing + separator + "# KlapContext temporary IndexScope\n" + generated + "\n"
+        path.write_text(content, encoding="utf-8")
+        yield
+    finally:
+        if existed and original is not None:
+            path.write_bytes(original)
+        else:
+            path.unlink(missing_ok=True)
 
 
 def executable() -> str | None:
@@ -97,16 +124,18 @@ def generate(root: Path, update: bool = False, scope: IndexScope | None = None) 
     output_parent = root / ".klap"
     output_parent.mkdir(parents=True, exist_ok=True)
     # Graphify's supported --out writes one graphify-out directory beneath the
-    # selected parent. --exclude is authoritative even for tracked files, so the
-    # central scope is applied before AST extraction rather than filtered later.
+    # selected parent. The temporary ignore file applies central scope before
+    # AST extraction while remaining compatible across supported releases.
     command = [*prefix, "extract", str(root), "--code-only", "--out", str(output_parent)]
-    for pattern in scope.graphify_excludes():
-        command.extend(["--exclude", pattern])
     if update:
         # A normal extract reuses Graphify's manifest/cache in the canonical
         # directory while still pruning files that became excluded.
         command.append("--no-cluster")
-    result = subprocess.run(command, cwd=root, text=True, capture_output=True)
+    try:
+        with _scoped_graphifyignore(root, scope):
+            result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired as error:
+        raise GraphifyError("Graphify extraction timed out after 120s") from error
     graph = canonical_graph(root)
     if result.returncode != 0 or not graph.exists():
         message = result.stderr.strip() or result.stdout.strip() or "Graphify did not create the canonical graph.json"
@@ -119,8 +148,11 @@ def generate(root: Path, update: bool = False, scope: IndexScope | None = None) 
         raise GraphifyError("Graphify created an invalid graph object")
     # Visualization exporters consume the exact canonical graph. Failures do
     # not invalidate the graph itself, but are reflected by missing artifacts.
-    subprocess.run(prefix + ["export", "html", "--graph", str(graph)], cwd=root, text=True, capture_output=True)
-    subprocess.run(prefix + ["export", "callflow-html", str(graph)], cwd=root, text=True, capture_output=True)
+    try:
+        subprocess.run(prefix + ["export", "html", "--graph", str(graph)], cwd=root, text=True, capture_output=True, timeout=30)
+        subprocess.run(prefix + ["export", "callflow-html", str(graph)], cwd=root, text=True, capture_output=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        pass
     return graph
 
 

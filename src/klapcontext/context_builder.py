@@ -131,11 +131,15 @@ def _analysis_evidence(raw: dict) -> list[dict]:
     return result
 
 
-def build(root: Path, graph: dict, scope: IndexScope | None = None) -> dict:
+def build(root: Path, graph: dict, scope: IndexScope | None = None, *, semantic_override: tuple[dict, dict] | None = None) -> dict:
     scope = scope or IndexScope.load(root, write_default=False)
     stack, detector_evidence = detect_project(root)
     docs = documents(root); value = purpose(root, docs); systems, stores = external_systems(root); deploy, observability, _ = deployment(root)
-    semantic, raw = _semantic(root, stack, scope); model = semantic.as_dict(); model["project_components"] = detect_components(root); points, background = model["entry_points"], model["background_tasks"]
+    if semantic_override is None:
+        semantic, raw = _semantic(root, stack, scope); model = semantic.as_dict()
+    else:
+        model, raw = semantic_override; model, raw = dict(model), dict(raw)
+    model["project_components"] = detect_components(root); points, background = model["entry_points"], model["background_tasks"]
     exploration = inspect(root, graph, model, scope=scope)
     runtime = _runtime(points, background, stack["frameworks"]); inputs, outputs = _io(points, systems, stores); flows = _flows(model)
     important = raw["important_files"] or ([{"path": "README.md", "role": "Documentación", "reason": "README detectado"}] if (root / "README.md").exists() else [])

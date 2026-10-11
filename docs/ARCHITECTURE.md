@@ -41,8 +41,11 @@ Repositorio → detección de proyecto → inteligencia de lenguaje
 `SemanticModel`. Agregar un adapter futuro (por ejemplo FastAPI) no debe exigir
 cambios en Agent Intelligence ni en esa reconstrucción.
 
-- `providers/`: contrato para motores de análisis. `GraphifyProvider` adapta el
-  motor actual sin acoplarlo al modelo del sistema.
+- `providers/`: contratos pequeños, modelos normalizados, registry y resolver
+  por capacidad. `GraphifyProvider` es un adapter opcional y los analizadores
+  nativos participan con la misma API. Serena vive en un adapter MCP separado,
+  sin imports del producto en el núcleo. Ver [PROVIDERS.md](PROVIDERS.md) y
+  [SERENA.md](SERENA.md).
 - `providers/code_intelligence.py`: provider local Tree-sitter PHP que genera
   un índice cacheado de símbolos y relaciones estructurales por demanda.
 - `detector.py`: detecta lenguaje, framework e infraestructura.
@@ -60,7 +63,8 @@ cambios en Agent Intelligence ni en esa reconstrucción.
 - Rutas, comandos, scheduler, jobs, eventos, listeners y componentes Laravel.
 - Dependencias Composer clasificadas por categoría y alcance.
 - Evidencia navegable para declaraciones determinísticas.
-- Provider adapter de Graphify como preparación para motores futuros.
+- Registry/resolver desacoplado con Graphify opcional, fallback local, timeout,
+  trazas y configuración de prioridad por capacidad.
 
 ## Próximas fases
 

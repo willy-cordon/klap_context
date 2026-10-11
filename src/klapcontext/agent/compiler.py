@@ -6,10 +6,10 @@ import re
 from pathlib import Path
 
 from .planner import ContextPlanner
-from ..context_builder import build
 from .verification import reconcile, sanitize
+from ..context_builder import build  # compatibility hook for callers monkeypatching the legacy builder
 from ..freshness import evaluate_freshness
-from ..graphify import canonical_graph, load_graph
+from ..providers import AnalysisServices
 from ..scope import IndexScope
 
 DETAIL_LIMITS = {"minimal": 3, "standard": 6, "deep": 12}
@@ -39,14 +39,13 @@ def compile_context(root: Path, query: str, *, detail: str = "standard", max_tok
             source = "cached"
         else:
             scope = IndexScope.load(root, write_default=False)
-            raw_graph = load_graph(canonical_graph(root)) if canonical_graph(root).exists() else {"nodes": []}
-            context = build(root, scope.filter_graph(raw_graph), scope)
-            source = "generated_from_canonical_graph" if raw_graph.get("nodes") or raw_graph.get("graph") else "generated_without_graph"
+            context, graph_result = AnalysisServices(root=root).build_context(root, scope=scope, existing_only=True)
+            source = "generated_from_provider_graph" if graph_result.state.value == "OK" else "generated_without_graph"
             if freshness["status"] == "STALE":
                 context["system_model"]["unknowns"].append("El snapshot persistido está desactualizado; ejecutá klap update antes de confiar en el índice.")
     except (OSError, json.JSONDecodeError):
         scope = IndexScope.load(root, write_default=False)
-        context = build(root, {"nodes": []}, scope)
+        context, _ = AnalysisServices(root=root).build_context(root, graph={"nodes": []}, scope=scope, existing_only=True)
         source = "generated_without_graph"
     model = context["system_model"]; limit = min(DETAIL_LIMITS[detail], max(1, max_tokens // 350)); terms = _terms(query, plan.area)
     entries = _rank(model["entry_points"], terms, limit); flows = _rank(model["main_flows"], terms, limit); files = _rank(model["important_files"], terms, limit)

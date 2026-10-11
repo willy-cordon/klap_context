@@ -6,12 +6,10 @@ from pathlib import Path
 from . import __version__
 from .agent_context import write as write_agent
 from .agent_setup import AgentInstructionsManager, doctor_agent, generate_mcp_configs, is_tracked
-from .context_builder import build
 from .git import commit, exclude_klap, is_repository
 from .freshness import evaluate_freshness
-from .graphify import GraphifyError, migrate_legacy_graphs
 from .portal import write as write_portal
-from .providers import default_provider
+from .providers import AnalysisServices, ResultState, migrate_legacy_graphs
 from .scope import IndexScope
 
 
@@ -19,23 +17,21 @@ def root_path(value: str | None) -> Path:
     return Path(value or os.getcwd()).resolve()
 
 
-def generate_all(root: Path, update: bool = False, *, shared: bool = False, allow_tracked_agents: bool = False) -> dict:
+def generate_all(root: Path, update: bool = False, *, shared: bool = False, allow_tracked_agents: bool = False, services: AnalysisServices | None = None) -> dict:
     if not is_repository(root):
         raise RuntimeError(f"Not a Git repository: {root}")
     exclude_klap(root)
     klap = root / ".klap"
     klap.mkdir(exist_ok=True)
     scope = IndexScope.load(root)
-    provider = default_provider()
-    graph_path = provider.generate(root, update, scope)
-    raw_graph = provider.load_graph(graph_path)
-    graph = scope.filter_graph(raw_graph)
-    files = provider.copy_outputs(root, graph_path.parent)
-    context = build(root, graph, scope)
+    services = services or AnalysisServices(root=root)
+    context, graph_result = services.build_context(root, scope=scope, update=update)
+    files = next((item.get("files", []) for item in graph_result.trace if item.get("files") is not None), [])
     context["freshness"] = {"status": "CURRENT", "reason": "Generation completed from the recorded scope snapshot."}
     (klap / "context.json").write_text(json.dumps(context, indent=2) + "\n", encoding="utf-8")
     agent = write_agent(context, klap / "agent-context.md")
-    mcp = generate_mcp_configs(root)
+    graphify_ready = graph_result.state == ResultState.OK and graph_result.provider is not None and graph_result.provider.name == "graphify"
+    mcp = generate_mcp_configs(root) if graphify_ready else {"status": "unavailable", "reason": "Graphify graph unavailable; native context remains usable."}
     setup = AgentInstructionsManager(root).apply(context, shared=shared, allow_tracked=allow_tracked_agents)
     context["agent_onboarding"] = {**setup.as_dict(), "mcp": mcp}
     (klap / "context.json").write_text(json.dumps(context, indent=2) + "\n", encoding="utf-8")
@@ -44,7 +40,8 @@ def generate_all(root: Path, update: bool = False, *, shared: bool = False, allo
         "schema_version": "0.3",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "git_commit": commit(root),
-        "provider": {"name": provider.name, "version": provider.version()},
+        "provider": {"name": graph_result.provider.name if graph_result.provider else None, "version": graph_result.provider.version if graph_result.provider else None, "state": graph_result.state.value, "warnings": graph_result.warnings, "trace": graph_result.trace},
+        "analysis": context["analysis"],
         "klap_version": __version__,
         "agent_onboarding": setup.as_dict(),
         "scope": {"rules_version": context["system_model"]["index_scope"]["rules_version"], "hash": scope.snapshot_hash(), "configuration": ".klap/scope.json"},
@@ -67,10 +64,27 @@ def cmd_init(args):
     shared, allow = _permission(args, root, "Agregar o actualizar")
     try:
         context = generate_all(root, shared=shared, allow_tracked_agents=allow) if shared or allow else generate_all(root)
-    except (RuntimeError, GraphifyError) as error:
+    except RuntimeError as error:
         print(f"✗ {error}", file=sys.stderr)
         return 1
-    print("✓ Git repository detected\n✓ Graphify available\n✓ Graph generated\n✓ Engineering context generated\n✓ Agent context generated\n✓ Human portal generated")
+    graph_provider = context.get("providers", {}).get("dependency_graph", {})
+    graph_line = "✓ Dependency graph generated" if graph_provider.get("state") == "OK" else "! External graph unavailable; native analyzers used"
+    print("✓ Git repository detected\n" + graph_line + "\n✓ Engineering context generated\n✓ Agent context generated\n✓ Human portal generated")
+    for warning in graph_provider.get("warnings", []):
+        print("! " + warning)
+    analysis = context.get("analysis", {})
+    rows = analysis.get("providers", [])
+    detected = [item["name"] for item in rows if item.get("detected")]
+    executed = [item["name"] for item in rows if item.get("executed")]
+    omitted = [f"{item['name']} ({item.get('reason') or item.get('status', 'omitted')})" for item in rows if not item.get("executed")]
+    print("Providers detected: " + (", ".join(detected) or "none"))
+    print("Providers executed: " + (", ".join(executed) or "none"))
+    failed = [f"{item['name']} ({item.get('reason') or item.get('status')})" for item in rows if item.get("executed") and item.get("status") == "PROVIDER_ERROR"]
+    if failed:
+        print("Provider errors: " + "; ".join(failed))
+    if omitted:
+        print("Providers omitted: " + "; ".join(omitted))
+    print("Capability coverage: " + analysis.get("status", "UNKNOWN"))
     setup = context.get("agent_onboarding", {})
     print(("✓ " if setup.get("status") in {"configured", "unchanged"} else "! ") + setup.get("message", "Agent onboarding not configured"))
     coverage = context["system_model"]["exploration"]["coverage"]
@@ -87,7 +101,7 @@ def cmd_update(args):
     shared, allow = _permission(args, root, "Actualizar")
     try:
         context = generate_all(root, update=True, shared=shared, allow_tracked_agents=allow) if shared or allow else generate_all(root, update=True)
-    except (RuntimeError, GraphifyError) as error:
+    except RuntimeError as error:
         print(f"✗ {error}", file=sys.stderr)
         return 1
     coverage = context["system_model"]["exploration"]["coverage"]
@@ -112,8 +126,8 @@ def cmd_doctor(args):
         (result["agents"]["valid"], "AGENTS.md configured"),
         (result["context"]["available"], "Engineering context available"),
         (result["freshness"]["status"] == "CURRENT", "Context is current"),
-        (result["graph"]["available"], "Graphify graph available"),
-        (result["mcp"]["configured"], "MCP configuration generated"),
+        (result["graph"]["available"] or not result["graph"].get("required", True), "Dependency graph available or optional"),
+        (result["mcp"]["configured"] or not result["mcp"].get("required", True), "Graph MCP configured or optional"),
         (result["scope"]["included_code_files"] > 0, "Index scope contains code"),
     ]
     for ok, label in checks:
@@ -121,6 +135,20 @@ def cmd_doctor(args):
     print(("✓" if result["mcp"]["connection_verified"] else "!") + " MCP connection " + ("verified" if result["mcp"]["connection_verified"] else "not yet verified"))
     for name, stage in result["mcp"].get("stages", {}).items():
         print(f"  {'✓' if stage.get('ok') else '!'} {name.replace('_', ' ').title()}: {stage.get('detail', '')}")
+    for provider_name, details in result.get("optional_providers", {}).items():
+        label = provider_name.replace("_", " ").title()
+        print(("✓" if details.get("detected") else "!") + f" {label} " + ("detected" if details.get("detected") else "not installed (optional)"))
+        print(f"  configured={details.get('configured', False)} enabled={details.get('enabled', False)} mode={details.get('mode', 'auto')} startable={details.get('startable')}")
+        if details.get("capabilities"):
+            print("  capabilities: " + ", ".join(details["capabilities"]))
+        elif details.get("capabilities_status"):
+            print("  capabilities: " + details["capabilities_status"])
+        if details.get("languages"):
+            print("  languages: " + ", ".join(details["languages"]))
+        if details.get("missing_dependencies"):
+            print("  missing dependencies: " + ", ".join(details["missing_dependencies"]))
+        if details.get("error"):
+            print("  error: " + details["error"])
     if result["agents"].get("missing_paths"):
         print("Missing paths: " + ", ".join(result["agents"]["missing_paths"]))
     print(f"Scope: {result['scope']['included_code_files']} code files included; {result['scope']['excluded_files']} excluded")
@@ -129,7 +157,7 @@ def cmd_doctor(args):
     if result["graph"].get("legacy_duplicates"):
         print("! Legacy graph copies preserved: " + ", ".join(result["graph"]["legacy_duplicates"]))
     required = all(ok for ok, _ in checks)
-    if getattr(args, "probe_mcp", False):
+    if getattr(args, "probe_mcp", False) and result["mcp"].get("required", True):
         required = required and result["mcp"]["connection_verified"]
     return 0 if required else 2
 

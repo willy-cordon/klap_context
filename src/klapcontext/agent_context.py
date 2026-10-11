@@ -14,7 +14,9 @@ def render(context: dict) -> str:
         lines.append("- " + " → ".join(f"{step['name']} ({step['file']})" for step in path["steps"]) + " [recorrido del grafo; entrada no confirmada]")
     lines.extend(["", "## Cambios recientes en Git"])
     lines.extend(f"- {change['date']} {change['commit'][:10]}: {change['subject']}" for change in s.get("recent_changes", [])[:6])
-    lines.extend(["","## Instrucciones para el Agente","1. Lee este contexto antes de explorar ampliamente el repositorio.","2. Usa Graphify MCP para dependencias y rutas de llamadas.","3. Consulta paths o vecinos relevantes antes de abrir muchos archivos.","4. Lee el código real antes de modificarlo.","5. Trata el contexto inferido como guía, no como verdad absoluta."])
+    graph_provider = context.get("providers", {}).get("dependency_graph", {})
+    graph_instruction = "2. Usa el proveedor de grafo disponible para dependencias y rutas de llamadas." if graph_provider.get("state") == "OK" else "2. No hay grafo externo disponible: usa evidencia nativa y verificá relaciones en el código real."
+    lines.extend(["","## Instrucciones para el Agente","1. Lee este contexto antes de explorar ampliamente el repositorio.",graph_instruction,"3. Consulta paths o vecinos relevantes antes de abrir muchos archivos.","4. Lee el código real antes de modificarlo.","5. Trata el contexto inferido como guía, no como verdad absoluta."])
     text="\n".join(lines)+"\n"; return text+f"\nTokens estimados: {len(text.split()) * 4 // 3}\n"
 def write(context: dict, output: Path) -> str:
     text=render(context); output.write_text(text,encoding="utf-8"); return text

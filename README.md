@@ -4,8 +4,10 @@
 
 KlapContext convierte evidencia de código en un modelo del sistema: puntos de
 entrada, flujos, automatizaciones, integraciones y sus incertidumbres.
-Graphify funciona como proveedor de análisis técnico; KlapContext es la capa
-que transforma esa evidencia en comprensión para personas y agentes de IA.
+Graphify puede funcionar como proveedor opcional de análisis técnico;
+Serena puede sumar navegación semántica on demand por MCP; KlapContext conserva
+analizadores locales y transforma toda evidencia mediante contratos
+desacoplados para personas y agentes de IA.
 
 ## Agent Intelligence
 
@@ -16,9 +18,9 @@ necesarios, sin acoplarse a una herramienta externa ni cargar archivos enteros
 por defecto. La compilación de Task Context llegará en los siguientes sprints.
 
 KlapContext convierte un repositorio en contexto de ingeniería reutilizable: un
-portal estático para personas y un briefing compacto para agentes de IA. Usa
-[Graphify](https://github.com/Graphify-Labs/graphify) como motor local de
-análisis técnico; KlapContext no reimplementa su grafo ni sus parsers.
+portal estático para personas y un briefing compacto para agentes de IA. Puede
+usar [Graphify](https://github.com/Graphify-Labs/graphify) como motor local de
+grafo, pero `klap init` sigue funcionando con proveedores nativos si no está.
 
 ```text
 Repositorio → KlapContext → Contexto de ingeniería
@@ -30,11 +32,12 @@ Repositorio → KlapContext → Contexto de ingeniería
 
 ```bash
 pip install klapcontext
+# opcional, para sumar el grafo Graphify
+pip install "klapcontext[graphify]"
 ```
 
-La instalación incluye `graphifyy`, la distribución oficial de Graphify que
-KlapContext necesita para generar el análisis local. Como alternativa para una
-CLI aislada: `pipx install klapcontext`.
+La instalación base no requiere Graphify. Como alternativa para una CLI
+aislada: `pipx install klapcontext` o `pipx install "klapcontext[graphify]"`.
 
 ## Primer uso
 
@@ -44,10 +47,29 @@ klap init
 klap open
 ```
 
-`klap init` genera el análisis Graphify, escribe artefactos locales bajo
-`.klap/` y prepara un `AGENTS.md` privado para que los agentes descubran el
+`klap init` ejecuta los proveedores disponibles, escribe artefactos locales
+bajo `.klap/` y prepara un `AGENTS.md` privado para que los agentes descubran el
 contexto progresivamente. Ambos se agregan a `.git/info/exclude`; KlapContext
 nunca modifica tu `.gitignore`.
+
+Graphify se descubre automáticamente por su ejecutable o módulo Python: no hace
+falta habilitarlo. Si está disponible, `init` ejecuta una extracción real y usa
+`.klap/graphify-out/graph.json` en `context.json`, el portal y la configuración
+MCP. Si no está instalado o falla, los analizadores nativos siguen generando un
+contexto útil y el reporte queda `PARTIAL`, con proveedores detectados,
+ejecutados y omitidos (incluido el motivo). `context.json.analysis` conserva la
+cobertura, trazas y contribuciones combinadas con procedencia. KlapContext no
+instala proveedores
+durante `init`. Se puede deshabilitar Graphify explícitamente con
+`.klap/providers.json` y `{"providers":{"graphify":{"enabled":false}}}`.
+
+[Serena](https://github.com/oraios/serena) se integra de forma independiente y
+opcional. Si `serena` está instalado o configurado, KlapContext descubre sus
+tools reales por MCP y ofrece símbolos, definiciones, referencias,
+implementaciones e impacto por consulta. No ejecuta esas búsquedas durante
+`klap init`, no instala Serena y nunca llama sus tools de escritura, shell,
+onboarding o memorias. Ver [instalación, configuración, seguridad,
+compatibilidad y límites](docs/SERENA.md).
 
 Para compartir las instrucciones de onboarding con el equipo:
 
@@ -83,7 +105,7 @@ klap scope --json
 | Comando | Descripción |
 | --- | --- |
 | `klap init [ruta]` | Genera el contexto inicial. |
-| `klap update [ruta]` | Actualiza Graphify y el contexto. |
+| `klap update [ruta]` | Actualiza los proveedores disponibles y el contexto. |
 | `klap status [ruta]` | Indica si el contexto está actualizado respecto a Git. |
 | `klap open [ruta]` | Abre el portal humano estático. |
 | `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
@@ -101,8 +123,8 @@ klap scope --json
 ├── agent-context.md      # briefing para agentes de IA
 ├── index.html            # portal humano, sin servidor
 ├── state.json            # metadatos de freshness
-├── mcp/                  # configuración local reutilizable para clientes MCP
-└── graphify-out/         # único grafo canónico, informe y visualizaciones
+├── mcp/                  # configuración local Graphify, cuando está disponible
+└── graphify-out/         # grafo/informe opcionales de Graphify
 ```
 
 `klap agent` genera ejemplos locales para Codex, Claude Code, Cursor y clientes
@@ -111,9 +133,17 @@ MCP genéricos. No instala agentes ni modifica configuraciones globales. Usá
 y ejecuta una consulta mínima `graph_stats`; falla si alguna etapa no se puede
 comprobar.
 
-Las afirmaciones incluyen evidencia y estados `CONFIRMED`, `INFERRED` o
-`UNKNOWN`. Si KlapContext no puede determinar algo con confianza, lo expone en
-lugar de inventarlo.
+El servidor MCP propio de KlapContext expone además búsquedas de símbolos,
+definiciones, referencias, implementaciones, dependencias, impacto y
+flujos/endpoints. Así, un cliente sólo necesita conectarse a KlapContext; el
+adapter mantiene una sesión Serena reutilizable cuando está disponible. El
+portal HTML sigue siendo estático y muestra únicamente datos precompilados: no
+simula consultas semánticas dinámicas.
+
+Las afirmaciones incluyen evidencia y confianza. Las consultas de proveedores
+distinguen `OK`, `NO_RESULTS`, `UNSUPPORTED`, `PROVIDER_ERROR` y `UNKNOWN`; si
+KlapContext no puede determinar algo, lo expone en lugar de inventarlo. Ver
+[arquitectura y guía de adapters](docs/PROVIDERS.md).
 
 ## Desarrollo
 

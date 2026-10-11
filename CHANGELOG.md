@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.0 — 2026-10-10 — Pluggable Analysis Providers
+
+- Introduces capability-based provider contracts, registry, resolver, normalized
+  results and provider provenance without coupling Agent Intelligence to an
+  implementation.
+- Makes Graphify optional and automatic when available, with native fallbacks,
+  scope-safe extraction and reliable restoration of temporary ignore rules.
+- Adds an optional, read-only Serena MCP adapter for semantic symbol,
+  definition, reference, implementation and impact queries.
+- Extends KlapContext's MCP server with code-navigation, dependency, impact and
+  endpoint-flow tools backed by the available providers.
+- Adds portable project-local provider configuration, richer diagnostics and
+  documentation covering installation, capabilities, security and limits.
+
 ## 0.6.0 — 2026-09-27 — Context Reliability
 
 - Adds a central, configurable Index Scope applied before Graphify and reused

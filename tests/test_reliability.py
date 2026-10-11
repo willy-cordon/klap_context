@@ -156,12 +156,16 @@ def test_scope_preserves_fastapi_nest_and_dotnet_sources(tmp_path):
 
 def test_canonical_graph_generation_passes_scope_before_provider(tmp_path, monkeypatch):
     (tmp_path / "app.py").write_text("def main(): pass")
+    original_ignore = b"custom-generated/**\r\n"
+    (tmp_path / ".graphifyignore").write_bytes(original_ignore)
     scope = IndexScope.load(tmp_path)
     commands = []
+    ignores = []
 
     def fake_run(command, **kwargs):
         commands.append(command)
         if "extract" in command:
+            ignores.append((tmp_path / ".graphifyignore").read_text(encoding="utf-8"))
             graph = canonical_graph(tmp_path)
             graph.parent.mkdir(parents=True, exist_ok=True)
             graph.write_text('{"nodes":[],"links":[]}')
@@ -172,7 +176,9 @@ def test_canonical_graph_generation_passes_scope_before_provider(tmp_path, monke
     result = generate_graph(tmp_path, scope=scope)
     extract = commands[0]
     assert result == tmp_path / ".klap/graphify-out/graph.json"
-    assert "--exclude" in extract and "--out" in extract
+    assert "--exclude" not in extract and "--out" in extract
+    assert ignores and "**/vendor/**" in ignores[0] and "custom-generated/**" in ignores[0]
+    assert (tmp_path / ".graphifyignore").read_bytes() == original_ignore
     assert not (tmp_path / "graphify-out/graph.json").exists()
 
 

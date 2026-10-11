@@ -1,16 +1,32 @@
-"""Contract for code-analysis engines feeding KlapContext evidence."""
-from __future__ import annotations
+"""Compatibility exports for the capability-specific provider contracts.
 
-from pathlib import Path
-from typing import Protocol
+`AnalysisProvider` historically meant the Graphify lifecycle API. It now aliases
+the narrow dependency-graph capability; new adapters should import only the
+Protocol(s) they implement from `providers.contracts`.
+"""
+from .contracts import (
+    CallGraphProvider,
+    DependencyGraphProvider,
+    DependencyProvider,
+    EntryPointProvider,
+    ImplementationProvider,
+    ProvenanceProvider,
+    ReferenceProvider,
+    StructuralRelationProvider,
+    SymbolProvider,
+)
 
-from ..scope import IndexScope
+AnalysisProvider = DependencyGraphProvider
 
-
-class AnalysisProvider(Protocol):
-    name: str
-
-    def generate(self, root: Path, update: bool = False, scope: IndexScope | None = None) -> Path: ...
-    def load_graph(self, graph: Path) -> dict: ...
-    def copy_outputs(self, root: Path, destination: Path) -> list[str]: ...
-    def version(self) -> str | None: ...
+__all__ = [
+    "AnalysisProvider",
+    "CallGraphProvider",
+    "DependencyGraphProvider",
+    "DependencyProvider",
+    "EntryPointProvider",
+    "ImplementationProvider",
+    "ProvenanceProvider",
+    "ReferenceProvider",
+    "StructuralRelationProvider",
+    "SymbolProvider",
+]

@@ -108,6 +108,11 @@ def _overview(context: dict) -> str:
 
 def render_agent_block(context: dict, *, shared: bool) -> str:
     shared_note = "\nIf `.klap/` is missing, run `klap init` before relying on generated context.\n" if shared else ""
+    provider = context.get("providers", {}).get("dependency_graph")
+    graph_available = provider is None or (provider.get("state") == "OK" and provider.get("provider") == "graphify")
+    graph_step = "Use Graphify MCP for dependencies, call paths, callers and impact analysis." if graph_available else "Use native evidence and verify dependency/call relationships in source; no external graph is available."
+    graph_rule = "Prefer focused Graphify queries over broad repository searches." if graph_available else "Prefer focused source inspection guided by native evidence over broad repository searches."
+    graph_resources = "- `.klap/graphify-out/graph.json`\n- `.klap/mcp/README.md`\n" if graph_available else ""
     return f"""{START}
 
 ## KlapContext — Engineering Context
@@ -122,7 +127,7 @@ This repository has been analyzed by KlapContext.
 
 1. Run `klap status`; if relevant context is stale, run `klap update`.
 2. Read `.klap/agent-context.md` progressively; do not load the entire graph.
-3. Use Graphify MCP for dependencies, call paths, callers and impact analysis.
+3. {graph_step}
 4. Identify the relevant execution flow before modifying code.
 5. Read the actual source code and related tests before making changes.
 6. Treat inferred relationships as hypotheses until verified.
@@ -132,14 +137,12 @@ This repository has been analyzed by KlapContext.
 - `.klap/agent-context.md`
 - `.klap/context.json`
 - `.klap/index.html`
-- `.klap/graphify-out/graph.json`
-- `.klap/mcp/README.md`
-- `.klap/scope.json` (index include/exclude configuration)
+{graph_resources}- `.klap/scope.json` (index include/exclude configuration)
 
 ### Working rules
 
 - Respect existing architecture, conventions and contracts.
-- Prefer focused Graphify queries over broad repository searches.
+- {graph_rule}
 - Never modify code based only on generated context; verify the source first.
 - If scope coverage is partial, inspect `system_model.index_scope` before trusting recommendations.
 - Preserve existing contracts unless the task explicitly requires changing them.
@@ -223,7 +226,9 @@ class AgentInstructionsManager:
             return {"status": "missing", "valid": False, "message": "AGENTS.md no existe"}
         text = self.path.read_text(encoding="utf-8")
         state = marker_state(text)
-        paths = [".klap/agent-context.md", ".klap/context.json", ".klap/index.html", ".klap/graphify-out/graph.json"]
+        paths = [".klap/agent-context.md", ".klap/context.json", ".klap/index.html"]
+        if ".klap/graphify-out/graph.json" in text:
+            paths.append(".klap/graphify-out/graph.json")
         missing = [path for path in paths if not (self.root / path).exists()]
         return {"status": state, "valid": state == "valid" and not missing, "missing_paths": missing, "message": "Configuración válida" if state == "valid" and not missing else "Configuración incompleta"}
 
@@ -278,5 +283,13 @@ def doctor_agent(root: Path, *, probe_mcp: bool = False) -> dict:
     graph = root / ".klap" / "graphify-out" / "graph.json"
     mcp_files = [root / ".klap" / "mcp" / "generic.json", root / ".klap" / "mcp" / "codex.toml"]
     scope = IndexScope.load(root, write_default=False).summary()
-    mcp_probe = probe_graphify_mcp(root) if probe_mcp else {"startable": bool(command_prefix() and graph.exists()), "connection_verified": False, "reason": "Use --probe-mcp para comprobar el protocolo MCP", "stages": {}}
-    return {"agents": agents, "context": {"available": (root / ".klap" / "agent-context.md").exists() and (root / ".klap" / "context.json").exists()}, "freshness": freshness, "scope": scope, "graph": {"available": graph.exists(), "canonical": ".klap/graphify-out/graph.json", "legacy_duplicates": legacy_graphs(root)}, "mcp": {"configured": all(path.exists() for path in mcp_files), **mcp_probe}}
+    try:
+        state = json.loads((root / ".klap" / "state.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        state = {}
+    provider = state.get("provider", {})
+    graph_expected = provider.get("name") == "graphify" and provider.get("state", "OK") == "OK"
+    mcp_probe = probe_graphify_mcp(root) if probe_mcp and graph_expected else {"startable": bool(command_prefix() and graph.exists()), "connection_verified": False, "reason": "Use --probe-mcp para comprobar el protocolo MCP" if graph_expected else "Graph provider is optional; native analysis is active", "stages": {}}
+    from .providers.optional import optional_provider_diagnostics
+    optional_providers = optional_provider_diagnostics(root, probe=probe_mcp)
+    return {"agents": agents, "context": {"available": (root / ".klap" / "agent-context.md").exists() and (root / ".klap" / "context.json").exists()}, "freshness": freshness, "scope": scope, "provider": provider, "graph": {"available": graph.exists(), "required": graph_expected, "canonical": ".klap/graphify-out/graph.json", "legacy_duplicates": legacy_graphs(root)}, "mcp": {"configured": all(path.exists() for path in mcp_files), "required": graph_expected, **mcp_probe}, "optional_providers": optional_providers}
