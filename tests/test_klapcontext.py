@@ -66,15 +66,17 @@ def test_lumen_detection_and_route_adapter():
 def test_portal_has_dashboard_and_real_views(tmp_path):
     context = build(fixture_repo(tmp_path), {"nodes": [{"name": "UserController", "path": "app/Http/UserController.php", "type": "controller"}]})
     page = render_portal(context, render_agent(context), ["graph.html"])
-    assert "PANORAMA DEL SISTEMA" in page
+    assert context["project"]["name"] in page
     assert "Mapa del sistema" in page
-    assert "data-view='flujos'" in page
-    assert "data-go='evidencia'" in page
+    assert "href='#flujos'" in page
+    assert "href='#evidencia'" in page
+    assert "id='flujos'" in page and "id='evidencia'" in page
     assert "Copiar contexto" in page
-    assert "data-go='entradas'" in page
+    assert "href='#entradas'" in page
     assert "data-node=" in page or "map-empty" in page
-    assert "Use this project with your AI agent" in page
-    assert "KLAP_CONTEXT" in page and "COPIAR CONTEXTO" in page
+    assert "Reporte generado desde evidencia local" in page
+    assert "Charcoal + Cyan + Soft Gray" not in page
+    assert "KLAP_CONTEXT" not in page and "COPIAR CONTEXTO" in page
     assert "--cyan:#00E5F0" in page and "data-help" in page
 
 

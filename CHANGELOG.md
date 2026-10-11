@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.3 — 2026-10-11 — Functional project portal
+
+- Makes the offline portal identify the analyzed repository instead of using
+  reference-design labels.
+- Replaces hidden single-view navigation with durable, keyboard-accessible
+  section anchors and a sticky active navigation bar.
+- Connects the console controls and map to real report actions and evidence.
+
 ## 0.8.2 — 2026-10-11 — Agent context dependency fix
 
 - Renders normalized dependency records safely when a project reports
