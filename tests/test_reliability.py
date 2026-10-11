@@ -218,6 +218,7 @@ def test_mcp_probe_reports_missing_graph_and_handshake_failure(tmp_path, monkeyp
     async def failed(_graph):
         raise RuntimeError("handshake rejected")
 
+    monkeypatch.setattr("klapcontext.agent_setup.importlib.util.find_spec", lambda _name: object())
     monkeypatch.setattr("klapcontext.agent_setup._probe_graphify_mcp_async", failed)
     result = probe_graphify_mcp(tmp_path)
     assert not result["connection_verified"] and "RuntimeError" in result["reason"]
@@ -230,6 +231,7 @@ def test_mcp_probe_reports_timeout(tmp_path, monkeypatch):
         await asyncio.sleep(1)
         return {}
 
+    monkeypatch.setattr("klapcontext.agent_setup.importlib.util.find_spec", lambda _name: object())
     monkeypatch.setattr("klapcontext.agent_setup._probe_graphify_mcp_async", slow)
     result = probe_graphify_mcp(tmp_path, timeout=0.01)
     assert not result["connection_verified"] and "timed out" in result["reason"]
@@ -246,7 +248,10 @@ def test_legacy_graph_migration_is_explicit_and_preserves_unknown_data(tmp_path)
     assert migrated["moved"][0]["to"].startswith(".klap/backups/")
 
 
-@pytest.mark.skipif(importlib.util.find_spec("graphify.serve") is None, reason="Graphify not installed")
+@pytest.mark.skipif(
+    importlib.util.find_spec("graphify") is None or importlib.util.find_spec("graphify.serve") is None,
+    reason="Graphify not installed",
+)
 def test_real_graphify_mcp_handshake_and_minimal_query(tmp_path):
     graph = tmp_path / ".klap/graphify-out/graph.json"; graph.parent.mkdir(parents=True)
     graph.write_text(json.dumps({"nodes": [{"id": "n1", "label": "main", "type": "function", "source_file": "app.py"}], "links": []}))

@@ -266,7 +266,7 @@ async def _probe_graphify_mcp_async(graph: Path) -> dict:
 
 def probe_graphify_mcp(root: Path, timeout: float = 8.0) -> dict:
     graph = root / ".klap" / "graphify-out" / "graph.json"
-    if importlib.util.find_spec("graphify.serve") is None:
+    if importlib.util.find_spec("graphify") is None or importlib.util.find_spec("graphify.serve") is None:
         return {"startable": False, "connection_verified": False, "reason": "graphify.serve no está instalado en el intérprete actual", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": "Python module unavailable"}}}
     try:
         return asyncio.run(asyncio.wait_for(_probe_graphify_mcp_async(graph), timeout=timeout))
