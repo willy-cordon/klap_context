@@ -78,6 +78,13 @@ def test_portal_has_dashboard_and_real_views(tmp_path):
     assert "--cyan:#00E5F0" in page and "data-help" in page
 
 
+def test_agent_context_accepts_normalized_dependency_names(tmp_path):
+    context = build(fixture_repo(tmp_path), {"nodes": []})
+    context["system_model"]["dependencies"] = [{"name": "express", "version": "^5", "category": "framework"}]
+    text = render_agent(context)
+    assert "express ^5 (framework)" in text
+
+
 def test_cli_and_portal_ignore_scalar_stack_metadata(tmp_path, monkeypatch, capsys):
     context = build(fixture_repo(tmp_path), {"nodes": []})
     monkeypatch.setattr(cli, "generate_all", lambda root: context)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.2 — 2026-10-11 — Agent context dependency fix
+
+- Renders normalized dependency records safely when a project reports
+  `name`/`category` instead of framework-manifest `package`/`scope` fields.
+
 ## 0.8.1 — 2026-10-11 — Portal compatibility fix
 
 - Fixes the offline portal navigation template for Python 3.10 and 3.11.

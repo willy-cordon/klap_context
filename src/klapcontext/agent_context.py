@@ -3,10 +3,23 @@ from pathlib import Path
 
 def items(values, key="name"):
     return "\n".join(f"- {value.get(key) or value.get('path')}" for value in values) if values else "Sin evidencia disponible."
+
+
+def dependency_items(values) -> str:
+    """Render both framework-manifest and normalized semantic dependencies."""
+    rows = []
+    for value in values[:12]:
+        name = value.get("package") or value.get("name") or value.get("path") or "Dependencia sin nombre"
+        version = value.get("version") or "versión no declarada"
+        scope = value.get("scope") or value.get("category") or value.get("status") or "sin clasificación"
+        rows.append(f"- {name} {version} ({scope})")
+    return "\n".join(rows) or "Sin dependencias específicas detectadas."
+
+
 def render(context: dict) -> str:
     s=context.get("system_model",{}); purpose=s.get("purpose",{}).get("text") or "No fue posible determinar el propósito con confianza."
     exploration=s.get("exploration",{}); coverage=exploration.get("coverage",{}); scope=s.get("index_scope",{})
-    sections=[("Propósito del Proyecto",purpose),("Cómo Funciona el Sistema",s.get("project_story",{}).get("text") or "No fue posible determinarlo con confianza."),("Superficies de Ejecución","\n".join(f"- {x['label']}: {x['count']}" for x in s.get("runtime_surfaces",[])) or "Sin superficies específicas detectadas."),("Rutas",items(s.get("routes",[]))),("Procesos Programados",items(s.get("scheduled_processes",[]))),("Jobs de Cola",items(s.get("queue_jobs",[]))),("Flujos Principales","\n".join(f"- **{x['name']}**: " + " → ".join(step["name"] for step in x["steps"]) for x in s.get("main_flows",[])) or "No se detectaron flujos principales con confianza."),("Dependencias Importantes","\n".join(f"- {x['package']} {x['version']} ({x['scope']})" for x in s.get("dependencies",[])[:12]) or "Sin dependencias específicas detectadas."),("Sistemas Externos",items(s.get("external_systems",[]))),("Almacenes de Datos",items(s.get("datastores",[]))),("Por Dónde Empezar","\n".join(f"- **{x['intent']}**: {', '.join(x['paths'])}" for x in s.get("start_here",[])) or "Sin recomendaciones detectadas."),("Incertidumbres","\n".join(f"- {x}" for x in s.get("unknowns",[])) or "Sin incertidumbres relevantes registradas.")]
+    sections=[("Propósito del Proyecto",purpose),("Cómo Funciona el Sistema",s.get("project_story",{}).get("text") or "No fue posible determinarlo con confianza."),("Superficies de Ejecución","\n".join(f"- {x['label']}: {x['count']}" for x in s.get("runtime_surfaces",[])) or "Sin superficies específicas detectadas."),("Rutas",items(s.get("routes",[]))),("Procesos Programados",items(s.get("scheduled_processes",[]))),("Jobs de Cola",items(s.get("queue_jobs",[]))),("Flujos Principales","\n".join(f"- **{x['name']}**: " + " → ".join(step["name"] for step in x["steps"]) for x in s.get("main_flows",[])) or "No se detectaron flujos principales con confianza."),("Dependencias Importantes",dependency_items(s.get("dependencies",[]))),("Sistemas Externos",items(s.get("external_systems",[]))),("Almacenes de Datos",items(s.get("datastores",[]))),("Por Dónde Empezar","\n".join(f"- **{x['intent']}**: {', '.join(x['paths'])}" for x in s.get("start_here",[])) or "Sin recomendaciones detectadas."),("Incertidumbres","\n".join(f"- {x}" for x in s.get("unknowns",[])) or "Sin incertidumbres relevantes registradas.")]
     lines=["# KlapContext — Contexto del Proyecto"]
     for title,body in sections: lines.extend(["",f"## {title}",body])
     lines.extend(["", "## Alcance del índice", f"- Código incluido: {scope.get('included_code_files', 0)} archivos; excluidos: {scope.get('excluded_files', 0)}; reglas: {scope.get('rules_version', 'UNKNOWN')}.", "- Consulta `.klap/context.json` → `system_model.index_scope` y editá `.klap/scope.json` para revisar excepciones.", "- El índice filtrado es una guía verificable, no autoridad final; revisá código fuente e incertidumbres antes de modificar.", "", "## Cobertura de la exploración", f"- Archivos de código con nodos: {coverage.get('code_files_with_graph_nodes', 0)}/{coverage.get('eligible_code_files', 0)}; estado: {coverage.get('status', 'UNKNOWN')}.", "- Un archivo representado en el grafo no implica que todas sus funciones estén resueltas.", "", "## Estructura y recorridos de llamadas", "- Consulta `.klap/context.json` → `system_model.exploration.files` para localizar archivos y símbolos por ruta."])
