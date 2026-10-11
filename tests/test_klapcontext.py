@@ -74,6 +74,8 @@ def test_portal_has_dashboard_and_real_views(tmp_path):
     assert "data-go='entradas'" in page
     assert "data-node=" in page or "map-empty" in page
     assert "Use this project with your AI agent" in page
+    assert "KLAP_CONTEXT" in page and "COPIAR CONTEXTO" in page
+    assert "--cyan:#00E5F0" in page and "data-help" in page
 
 
 def test_cli_and_portal_ignore_scalar_stack_metadata(tmp_path, monkeypatch, capsys):
