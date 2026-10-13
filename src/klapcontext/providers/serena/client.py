@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import os
 import queue
 import threading
 from dataclasses import dataclass
@@ -84,7 +85,17 @@ class SerenaMcpClient:
         thread.join(timeout=5)
 
     async def _serve(self) -> None:
-        parameters = StdioServerParameters(command=self.settings.command, args=self.settings.launch_args(self.root))
+        from ..lifecycle import managed_command, managed_home
+        environment = dict(os.environ)
+        if managed_command(self.root, "serena") == self.settings.command:
+            home = managed_home(self.root, "serena")
+            home.mkdir(parents=True, exist_ok=True)
+            environment["SERENA_HOME"] = str(home)
+            # Keep Serena's uv/uvx prerequisite private to the managed
+            # runtime; never modify the user's global PATH.
+            scripts = str(Path(self.settings.command).parent)
+            environment["PATH"] = scripts + os.pathsep + environment.get("PATH", "")
+        parameters = StdioServerParameters(command=self.settings.command, args=self.settings.launch_args(self.root), env=environment)
         while True:
             command = await asyncio.to_thread(self._commands.get)
             if command.action == "close":

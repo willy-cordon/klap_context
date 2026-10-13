@@ -34,7 +34,7 @@ _SEMANTIC_FIELDS = {
 }
 
 
-def default_registry(root: Path | None = None, *, graphify: bool = True) -> ProviderRegistry:
+def default_registry(root: Path | None = None, *, graphify: bool = True, serena: bool = True) -> ProviderRegistry:
     registry = ProviderRegistry()
     if graphify:
         # Optional adapter import stays at the composition boundary.
@@ -44,14 +44,14 @@ def default_registry(root: Path | None = None, *, graphify: bool = True) -> Prov
     registry.register(PhpTreeSitterProvider(), languages={"php"}, priorities={capability: 50 for capability in PhpTreeSitterProvider.capabilities})
     if root is not None:
         from .optional import register_optional_providers
-        register_optional_providers(registry, Path(root))
+        register_optional_providers(registry, Path(root), serena=serena)
         registry.apply_config(Path(root) / ".klap" / "providers.json")
     return registry
 
 
 class AnalysisServices:
-    def __init__(self, registry: ProviderRegistry | None = None, *, root: Path | None = None, default_timeout: float = 30.0):
-        self.registry = registry or default_registry(root)
+    def __init__(self, registry: ProviderRegistry | None = None, *, root: Path | None = None, default_timeout: float = 30.0, graphify: bool = True, serena: bool = True):
+        self.registry = registry or default_registry(root, graphify=graphify, serena=serena)
         self.resolver = CapabilityResolver(self.registry, default_timeout=default_timeout)
 
     def close(self) -> None:

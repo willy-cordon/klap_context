@@ -7,12 +7,14 @@ from .contracts import Capability
 from .registry import ProviderRegistry
 
 
-def register_optional_providers(registry: ProviderRegistry, root: Path) -> None:
+def register_optional_providers(registry: ProviderRegistry, root: Path, *, serena: bool = True) -> None:
     """Register bundled optional adapters without leaking them into core services."""
     try:
         from .serena import SerenaProvider, load_serena_settings
 
         settings = load_serena_settings(Path(root))
+        if not serena:
+            return
         if settings.configured or settings.detected:
             registry.register(
                 SerenaProvider(Path(root), settings),

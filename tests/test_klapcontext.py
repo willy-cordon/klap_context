@@ -104,6 +104,7 @@ def test_exclude_klap_is_idempotent(tmp_path, monkeypatch):
     exclude_klap(root)
     exclude_klap(root)
     assert (root / ".git" / "info" / "exclude").read_text().splitlines().count(".klap/") == 1
+    assert (root / ".git" / "info" / "exclude").read_text().splitlines().count(".serena/") == 1
 
 
 def test_status_marks_matching_clean_context_current(tmp_path, monkeypatch, capsys):

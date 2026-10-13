@@ -42,14 +42,19 @@ def _scoped_graphifyignore(root: Path, scope: IndexScope):
             path.unlink(missing_ok=True)
 
 
-def executable() -> str | None:
+def executable(root: Path | None = None) -> str | None:
+    if root is not None:
+        from .providers.lifecycle import managed_command
+        managed = managed_command(Path(root), "graphify")
+        if managed:
+            return managed
     return shutil.which("graphify")
 
 
-def command_prefix() -> list[str] | None:
+def command_prefix(root: Path | None = None) -> list[str] | None:
     """Use the console script when present; PyPI also supports python -m graphify."""
-    if executable():
-        return [executable()]
+    if executable(root):
+        return [executable(root)]
     try:
         import graphify  # noqa: F401
         return [sys.executable, "-m", "graphify"]
@@ -57,7 +62,16 @@ def command_prefix() -> list[str] | None:
         return None
 
 
-def version() -> str | None:
+def version(root: Path | None = None) -> str | None:
+    if root is not None:
+        command = executable(root)
+        if command:
+            try:
+                output = subprocess.run([command, "--version"], text=True, capture_output=True, timeout=5, check=False)
+                if output.returncode == 0:
+                    return (output.stdout or output.stderr).strip().rsplit(" ", 1)[-1]
+            except (OSError, subprocess.SubprocessError):
+                pass
     try:
         return importlib.metadata.version("graphifyy")
     except importlib.metadata.PackageNotFoundError:
@@ -117,7 +131,11 @@ def migrate_legacy_graphs(root: Path, *, apply: bool = False) -> dict:
 
 
 def generate(root: Path, update: bool = False, scope: IndexScope | None = None) -> Path:
-    prefix = command_prefix()
+    # Preserve the public no-argument command resolver for existing callers;
+    # only a project-managed runtime needs an explicit root-aware prefix.
+    from .providers.lifecycle import managed_command
+    managed = managed_command(root, "graphify")
+    prefix = [managed] if managed else command_prefix()
     if not prefix:
         raise GraphifyError("Graphify is required. Install it with: pipx install graphifyy")
     scope = scope or IndexScope.load(root)

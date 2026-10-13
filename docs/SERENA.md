@@ -2,8 +2,7 @@
 
 KlapContext puede usar [Serena](https://github.com/oraios/serena) como proveedor
 semántico **on demand** mediante su servidor MCP público por stdio. No importa
-módulos internos de Serena, no lo descarga, no lo instala y no cambia la
-configuración global del operador.
+módulos internos de Serena ni cambia la configuración global del operador.
 
 ## Estado upstream verificado
 
@@ -32,7 +31,7 @@ Investigación realizada contra el repositorio y la documentación oficiales el
 Fuentes: README, `pyproject.toml`, `LICENSE`, documentación de herramientas,
 lenguajes, ejecución, clientes y configuración del repositorio oficial.
 
-## Instalación separada
+## Instalación administrada y separada
 
 Seguí el procedimiento oficial, fuera de KlapContext:
 
@@ -42,11 +41,18 @@ serena init
 serena --version
 ```
 
-KlapContext sólo detecta el comando. `klap init` nunca instala Serena ni inicia
-su servidor. La primera consulta semántica puede hacer que Serena cree
-`.serena/project.yml` y descargue el language server necesario; ese
-comportamiento pertenece a Serena y ocurre únicamente después de una consulta
-explícita o de `klap doctor --probe-mcp`.
+`klap init` usa Serena 1.7.0 fijado y lo instala sólo si hace falta en
+`.klap/provider-runtime/serena/`; también instala `uv 0.13.0` en ese mismo
+runtime porque algunos language servers oficiales de Serena lo requieren. No
+modifica PATH ni el intérprete principal. Luego ejecuta un handshake MCP,
+descubre `tools/list` y verifica un `get_symbols_overview` público, acotado a un
+único archivo elegible. Esa verificación puede hacer que Serena cree
+`.serena/project.yml` y descargue el language server necesario; el archivo y la
+caché pertenecen a Serena, permanecen locales al proyecto y no se agregan al
+artefacto de KlapContext. KlapContext los añade solamente a `.git/info/exclude`
+(nunca al `.gitignore` compartido). `--no-serena` lo omite para la
+ejecución actual; `enabled:false` en `.klap/providers.json` es el opt-out
+persistente y no se sobrescribe.
 
 ## Configuración portable
 
@@ -170,12 +176,15 @@ local existente; no fuerza búsquedas exhaustivas de Serena.
 ```bash
 klap doctor .
 klap doctor . --probe-mcp
+klap doctor . --repair
 ```
 
 El primer comando distingue `configured`, `detected`, `enabled` y dependencias
 faltantes sin iniciar Serena. `--probe-mcp` hace handshake, descubre tools y
 reporta `startable`, capacidades, lenguajes detectados y errores. La ausencia o
 falla de Serena nunca vuelve obligatorio al proveedor ni bloquea KlapContext.
+`--repair` reinstala de forma explícita los runtimes estándar locales con las
+versiones fijadas; no cambia instalaciones globales.
 
 ## Portal HTML
 

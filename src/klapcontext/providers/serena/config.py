@@ -72,8 +72,10 @@ def load_serena_settings(root: Path) -> SerenaSettings:
     args = payload.get("args", list(DEFAULT_ARGS))
     if not isinstance(args, (list, tuple)) or not all(isinstance(item, str) for item in args):
         raise ValueError("Serena args must be an array of strings")
+    from ..lifecycle import managed_command
+    managed = managed_command(Path(root), "serena")
     return SerenaSettings(
-        command=str(payload.get("command", "serena")),
+        command=str(payload.get("command", managed or "serena")),
         args=tuple(args),
         enabled=bool(payload.get("enabled", True)),
         mode=str(payload.get("mode", "auto")),

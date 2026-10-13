@@ -4,7 +4,7 @@
 
 KlapContext convierte evidencia de código en un modelo del sistema: puntos de
 entrada, flujos, automatizaciones, integraciones y sus incertidumbres.
-Graphify puede funcionar como proveedor opcional de análisis técnico;
+Graphify puede funcionar como proveedor estándar de análisis técnico;
 Serena puede sumar navegación semántica on demand por MCP; KlapContext conserva
 analizadores locales y transforma toda evidencia mediante contratos
 desacoplados para personas y agentes de IA.
@@ -32,12 +32,11 @@ Repositorio → KlapContext → Contexto de ingeniería
 
 ```bash
 pip install klapcontext
-# opcional, para sumar el grafo Graphify
-pip install "klapcontext[graphify]"
 ```
 
-La instalación base no requiere Graphify. Como alternativa para una CLI
-aislada: `pipx install klapcontext` o `pipx install "klapcontext[graphify]"`.
+La instalación base no incorpora proveedores en el intérprete de KlapContext.
+El primer `klap init` los prepara en entornos aislados bajo
+`.klap/provider-runtime/`.
 
 ## Primer uso
 
@@ -52,22 +51,24 @@ bajo `.klap/` y prepara un `AGENTS.md` privado para que los agentes descubran el
 contexto progresivamente. Ambos se agregan a `.git/info/exclude`; KlapContext
 nunca modifica tu `.gitignore`.
 
-Graphify se descubre automáticamente por su ejecutable o módulo Python: no hace
-falta habilitarlo. Si está disponible, `init` ejecuta una extracción real y usa
+`klap init` prepara Graphify y Serena con versiones fijadas si no encuentra una
+instalación compatible. Si una preparación falla, los analizadores nativos
+siguen generando contexto y el resumen registra el motivo. Graphify ejecuta una extracción real y usa
 `.klap/graphify-out/graph.json` en `context.json`, el portal y la configuración
 MCP. Si no está instalado o falla, los analizadores nativos siguen generando un
 contexto útil y el reporte queda `PARTIAL`, con proveedores detectados,
 ejecutados y omitidos (incluido el motivo). `context.json.analysis` conserva la
-cobertura, trazas y contribuciones combinadas con procedencia. KlapContext no
-instala proveedores
-durante `init`. Se puede deshabilitar Graphify explícitamente con
+cobertura, trazas y contribuciones combinadas con procedencia. Se puede
+deshabilitar Graphify explícitamente con
 `.klap/providers.json` y `{"providers":{"graphify":{"enabled":false}}}`.
 
 [Serena](https://github.com/oraios/serena) se integra de forma independiente y
-opcional. Si `serena` está instalado o configurado, KlapContext descubre sus
+intercambiable. Si falta una instalación compatible, Serena 1.7.0 se prepara
+en el runtime local; KlapContext descubre sus
 tools reales por MCP y ofrece símbolos, definiciones, referencias,
-implementaciones e impacto por consulta. No ejecuta esas búsquedas durante
-`klap init`, no instala Serena y nunca llama sus tools de escritura, shell,
+implementaciones e impacto por consulta. Durante `klap init` sólo ejecuta una
+comprobación acotada de overview sobre un archivo elegible para verificar MCP;
+no realiza búsquedas semánticas amplias, y nunca llama sus tools de escritura, shell,
 onboarding o memorias. Ver [instalación, configuración, seguridad,
 compatibilidad y límites](docs/SERENA.md).
 
@@ -105,12 +106,15 @@ klap scope --json
 | Comando | Descripción |
 | --- | --- |
 | `klap init [ruta]` | Genera el contexto inicial. |
-| `klap update [ruta]` | Actualiza los proveedores disponibles y el contexto. |
+| `klap init --no-serena [ruta]` | Omite instalación, conexión y uso de Serena en esta ejecución. |
+| `klap init --no-graphify [ruta]` | Omite instalación y ejecución de Graphify en esta ejecución. |
+| `klap update [ruta]` | Reutiliza proveedores compatibles y actualiza el contexto. |
 | `klap status [ruta]` | Indica si el contexto está actualizado respecto a Git. |
 | `klap open [ruta]` | Abre el portal humano estático. |
 | `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
 | `klap context "tarea" [ruta]` | Compila un contexto focalizado reutilizando `.klap/context.json` si existe. |
 | `klap doctor --agent [ruta]` | Comprueba AGENTS.md, freshness, Graphify y configuración MCP. |
+| `klap doctor --agent --repair [ruta]` | Repara proveedores estándar en runtimes locales. |
 | `klap scope [ruta]` | Explica archivos incluidos/excluidos y sus motivos. |
 | `klap migrate-graph [ruta]` | Planea la migración de grafos legacy; `--apply` preserva respaldos. |
 | `klap --version` | Muestra la versión instalada. |

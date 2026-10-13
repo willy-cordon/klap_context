@@ -10,6 +10,7 @@ from .git import commit, exclude_klap, is_repository
 from .freshness import evaluate_freshness
 from .portal import write as write_portal
 from .providers import AnalysisServices, ResultState, migrate_legacy_graphs
+from .providers.lifecycle import prepare_standard_providers, write_provider_state
 from .scope import IndexScope
 
 
@@ -17,20 +18,36 @@ def root_path(value: str | None) -> Path:
     return Path(value or os.getcwd()).resolve()
 
 
-def generate_all(root: Path, update: bool = False, *, shared: bool = False, allow_tracked_agents: bool = False, services: AnalysisServices | None = None) -> dict:
+def generate_all(root: Path, update: bool = False, *, shared: bool = False, allow_tracked_agents: bool = False, services: AnalysisServices | None = None, no_graphify: bool = False, no_serena: bool = False) -> dict:
     if not is_repository(root):
         raise RuntimeError(f"Not a Git repository: {root}")
     exclude_klap(root)
     klap = root / ".klap"
     klap.mkdir(exist_ok=True)
     scope = IndexScope.load(root)
-    services = services or AnalysisServices(root=root)
-    context, graph_result = services.build_context(root, scope=scope, update=update)
+    lifecycle = {} if services is not None else prepare_standard_providers(root, no_graphify=no_graphify, no_serena=no_serena)
+    services = services or AnalysisServices(root=root, graphify=not no_graphify, serena=not no_serena)
+    try:
+        context, graph_result = services.build_context(root, scope=scope, update=update)
+    finally:
+        services.close()
     files = next((item.get("files", []) for item in graph_result.trace if item.get("files") is not None), [])
+    graphify_ready = graph_result.state == ResultState.OK and graph_result.provider is not None and graph_result.provider.name == "graphify"
+    if lifecycle and "graphify" in lifecycle and lifecycle["graphify"].get("state") == "READY":
+        graph_runtime = lifecycle["graphify"]
+        if graphify_ready:
+            graph_runtime["connection"] = "VERIFIED"
+        else:
+            graph_runtime.update({
+                "state": "PARTIAL",
+                "connection": "FAILED",
+                "error": graph_result.error or "Graphify extraction did not produce a valid canonical graph",
+            })
+        write_provider_state(root, lifecycle)
     context["freshness"] = {"status": "CURRENT", "reason": "Generation completed from the recorded scope snapshot."}
+    context["analysis"]["provider_lifecycle"] = lifecycle
     (klap / "context.json").write_text(json.dumps(context, indent=2) + "\n", encoding="utf-8")
     agent = write_agent(context, klap / "agent-context.md")
-    graphify_ready = graph_result.state == ResultState.OK and graph_result.provider is not None and graph_result.provider.name == "graphify"
     mcp = generate_mcp_configs(root) if graphify_ready else {"status": "unavailable", "reason": "Graphify graph unavailable; native context remains usable."}
     setup = AgentInstructionsManager(root).apply(context, shared=shared, allow_tracked=allow_tracked_agents)
     context["agent_onboarding"] = {**setup.as_dict(), "mcp": mcp}
@@ -42,6 +59,7 @@ def generate_all(root: Path, update: bool = False, *, shared: bool = False, allo
         "git_commit": commit(root),
         "provider": {"name": graph_result.provider.name if graph_result.provider else None, "version": graph_result.provider.version if graph_result.provider else None, "state": graph_result.state.value, "warnings": graph_result.warnings, "trace": graph_result.trace},
         "analysis": context["analysis"],
+        "provider_lifecycle": lifecycle,
         "klap_version": __version__,
         "agent_onboarding": setup.as_dict(),
         "scope": {"rules_version": context["system_model"]["index_scope"]["rules_version"], "hash": scope.snapshot_hash(), "configuration": ".klap/scope.json"},
@@ -63,10 +81,13 @@ def cmd_init(args):
     print("KlapContext\n")
     shared, allow = _permission(args, root, "Agregar o actualizar")
     try:
-        context = generate_all(root, shared=shared, allow_tracked_agents=allow) if shared or allow else generate_all(root)
+        no_graphify, no_serena = getattr(args, "no_graphify", False), getattr(args, "no_serena", False)
+        context = generate_all(root, shared=shared, allow_tracked_agents=allow, no_graphify=no_graphify, no_serena=no_serena) if shared or allow or no_graphify or no_serena else generate_all(root)
     except RuntimeError as error:
         print(f"✗ {error}", file=sys.stderr)
         return 1
+    for name, details in context.get("analysis", {}).get("provider_lifecycle", {}).items():
+        print(f"Provider {name}: {details.get('state')} · {details.get('connection')}" + (f" ({details['error']})" if details.get("error") else ""))
     graph_provider = context.get("providers", {}).get("dependency_graph", {})
     graph_line = "✓ Dependency graph generated" if graph_provider.get("state") == "OK" else "! External graph unavailable; native analyzers used"
     print("✓ Git repository detected\n" + graph_line + "\n✓ Engineering context generated\n✓ Agent context generated\n✓ Human portal generated")
@@ -100,7 +121,8 @@ def cmd_update(args):
     root = root_path(args.path)
     shared, allow = _permission(args, root, "Actualizar")
     try:
-        context = generate_all(root, update=True, shared=shared, allow_tracked_agents=allow) if shared or allow else generate_all(root, update=True)
+        no_graphify, no_serena = getattr(args, "no_graphify", False), getattr(args, "no_serena", False)
+        context = generate_all(root, update=True, shared=shared, allow_tracked_agents=allow, no_graphify=no_graphify, no_serena=no_serena) if shared or allow or no_graphify or no_serena else generate_all(root, update=True)
     except RuntimeError as error:
         print(f"✗ {error}", file=sys.stderr)
         return 1
@@ -120,8 +142,12 @@ def cmd_status(args):
 
 
 def cmd_doctor(args):
-    result = doctor_agent(root_path(args.path), probe_mcp=getattr(args, "probe_mcp", False))
+    root = root_path(args.path)
+    repaired = prepare_standard_providers(root, repair=True) if getattr(args, "repair", False) else {}
+    result = doctor_agent(root, probe_mcp=getattr(args, "probe_mcp", False))
     print("KlapContext — Agent Doctor\n")
+    for name, details in repaired.items():
+        print(f"Repair {name}: {details.get('state')} · {details.get('connection')}" + (f" ({details['error']})" if details.get("error") else ""))
     checks = [
         (result["agents"]["valid"], "AGENTS.md configured"),
         (result["context"]["available"], "Engineering context available"),
@@ -225,11 +251,14 @@ def main(argv=None):
         if name in {"init", "update"}:
             command.add_argument("--shared", action="store_true", help="Create versionable AGENTS.md instructions")
             command.add_argument("--allow-tracked-agents", action="store_true", help="Authorize updating a tracked AGENTS.md")
+            command.add_argument("--no-serena", action="store_true", help="Do not install, connect or use Serena for this run")
+            command.add_argument("--no-graphify", action="store_true", help="Do not install, run or use Graphify for this run")
         command.set_defaults(func=func)
     command = subs.add_parser("doctor", help="Diagnose project and agent readiness")
     command.add_argument("path", nargs="?", default=".")
     command.add_argument("--agent", action="store_true", help="Check AGENTS.md and generated context")
     command.add_argument("--probe-mcp", action="store_true", help="Start Graphify MCP briefly and stop it")
+    command.add_argument("--repair", action="store_true", help="Install or repair standard providers in isolated project runtimes")
     command.set_defaults(func=cmd_doctor)
     command = subs.add_parser("migrate-graph", help="Safely plan or apply legacy graph storage migration")
     command.add_argument("path", nargs="?", default=".")

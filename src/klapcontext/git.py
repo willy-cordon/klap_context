@@ -55,6 +55,9 @@ def exclude_klap(root: Path) -> None:
     exclude = (root / git_dir / "info" / "exclude").resolve()
     exclude.parent.mkdir(parents=True, exist_ok=True)
     existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
-    additions = [entry for entry in (".klap/", "graphify-out/") if entry not in {line.strip() for line in existing.splitlines()}]
+    # Serena manages project-local language-server metadata in `.serena/`.
+    # Keep it private like `.klap/` without modifying the repository's shared
+    # .gitignore or hiding an explicitly tracked file.
+    additions = [entry for entry in (".klap/", "graphify-out/", ".serena/") if entry not in {line.strip() for line in existing.splitlines()}]
     if additions:
         exclude.write_text(existing.rstrip() + ("\n" if existing.strip() else "") + "\n".join(additions) + "\n", encoding="utf-8")

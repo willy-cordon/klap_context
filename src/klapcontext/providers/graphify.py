@@ -18,7 +18,7 @@ class GraphifyProvider:
         request = request or {}
         if request.get("existing_only"):
             return graphify.canonical_graph(Path(request.get("root", "."))).exists()
-        return graphify.command_prefix() is not None
+        return graphify.command_prefix(Path(request.get("root", "."))) is not None
 
     def dependency_graph(self, request: Any) -> ProviderResult[dict]:
         request = request or {}

@@ -18,6 +18,23 @@ ProviderRegistry ── prioridad/capacidad, idioma, framework, enabled
 adapters Graphify | analizadores nativos | adapters externos
 ```
 
+## Ciclo de vida estándar
+
+`providers/lifecycle.py` prepara los binarios estándar antes de componer el
+registry, pero no participa en la resolución de capacidades. Usa entornos
+aislados por proyecto en `.klap/provider-runtime/`, con Graphify `0.9.66`,
+Serena `1.7.0` y, para su backend LSP, `uv 0.13.0` fijados. El estado
+reproducible queda en
+`.klap/provider-state.json`: versión requerida/instalada, origen, ejecutable,
+estado de instalación, conexión, capacidades verificadas y último error.
+
+Precedencia: `enabled:false` en `.klap/providers.json` impide toda preparación
+persistente; `--no-serena` y `--no-graphify` omiten el proveedor sólo para la
+ejecución actual; en ausencia de ambos, los proveedores estándar se preparan.
+Un fallo deja el resultado en `FAILED` o `PARTIAL` y el resolver mantiene los
+proveedores nativos como fallback. No se modifican PATH ni configuraciones MCP
+globales.
+
 - `providers/contracts.py` contiene Protocols pequeños para símbolos,
   referencias, implementaciones, call graph, entry points, relaciones,
   dependencias y procedencia. Un adapter implementa sólo lo que soporta.
@@ -120,9 +137,10 @@ Un proveedor no registrado genera una advertencia de configuración. Un adapter
 sin restricción de idioma/framework es agnóstico y puede participar aunque el
 lenguaje no haya sido detectado.
 
-Serena se registra si está configurado o su comando es detectable, pero su
-proceso sólo se inicia para una consulta semántica explícita o un probe de
-doctor. Las capacidades se reducen dinámicamente a `tools/list`; no basta con
+Serena se registra si está configurado o su comando es detectable. Durante
+`init` se inicia sólo para un handshake y una comprobación bounded de overview
+sobre un archivo elegible; el resto de las consultas semánticas permanece bajo
+demanda. Las capacidades se reducen dinámicamente a `tools/list`; no basta con
 que el paquete esté instalado.
 
 ## Adapter externo mínimo

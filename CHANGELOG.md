@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0 — 2026-10-13 — Managed standard providers
+
+- Makes Graphify and Serena standard `klap init` providers, prepared in isolated
+  per-project runtimes with pinned versions and reproducible lifecycle state.
+- Adds `--no-graphify`, `--no-serena`, and `klap doctor --agent --repair` while
+  preserving explicit project opt-outs and native-analyzer fallback.
+- Verifies Graphify executability and Serena's public MCP handshake, tool
+  discovery and bounded read-only overview before reporting a provider ready.
+- Keeps managed runtime, Serena cache and generated context private through
+  `.git/info/exclude`; no global PATH, agent configuration or Python runtime is
+  modified.
+
 ## 0.8.3 — 2026-10-11 — Functional project portal
 
 - Makes the offline portal identify the analyzed repository instead of using
