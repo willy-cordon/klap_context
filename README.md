@@ -108,7 +108,9 @@ klap scope --json
 | `klap init [ruta]` | Genera el contexto inicial. |
 | `klap init --no-serena [ruta]` | Omite instalación, conexión y uso de Serena en esta ejecución. |
 | `klap init --no-graphify [ruta]` | Omite instalación y ejecución de Graphify en esta ejecución. |
+| `klap init --no-archify [ruta]` | Omite instalación y ejecución del renderer Archify en esta ejecución. |
 | `klap update [ruta]` | Reutiliza proveedores compatibles y actualiza el contexto. |
+| `klap update --no-archify [ruta]` | Actualiza el contexto sin regenerar diagramas Archify. |
 | `klap status [ruta]` | Indica si el contexto está actualizado respecto a Git. |
 | `klap open [ruta]` | Abre el portal humano estático. |
 | `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
@@ -127,9 +129,33 @@ klap scope --json
 ├── agent-context.md      # briefing para agentes de IA
 ├── index.html            # portal humano, sin servidor
 ├── state.json            # metadatos de freshness
+├── archify-state.json    # estado separado del renderer
+├── flows/                # IR reproducible + HTML interactivo por flujo
+├── renderer-runtime/     # Archify fijado y aislado por proyecto
 ├── mcp/                  # configuración local Graphify, cuando está disponible
 └── graphify-out/         # grafo/informe opcionales de Graphify
 ```
+
+### Diagramas de flujos con Archify
+
+`klap init` y `klap update` preparan Archify 3.1.0 automáticamente y proyectan
+los flujos reconstruidos por Klap a diagramas `workflow`. Archify sólo renderiza:
+no analiza el repositorio ni participa del registro de proveedores. El paquete
+oficial se descarga desde el release fijado, se verifica con SHA-256 y se guarda
+en `.klap/renderer-runtime/archify`; requiere Node.js 18 o superior.
+
+La sección **Flujos** del portal permite seleccionar el diagrama, revisar
+evidencia y limitaciones, y abrir cada HTML autocontenido con `file://`. Si Node,
+la descarga, la validación o el render fallan, el contexto y el resto del portal
+se generan igualmente y `archify-state.json` conserva el motivo. Para
+deshabilitarlo en el proyecto creá `.klap/archify.json` con
+`{"enabled": false}`. El mismo archivo acepta `max_flows`, `max_nodes`,
+`max_depth` y `timeout_seconds`.
+
+Los recorridos son relaciones reconstruidas por análisis estático; no son
+trazas observadas en producción. El IR se conserva junto al HTML para depurar y
+reproducir resultados. Archify se distribuye bajo licencia MIT; su runtime
+incluye `LICENSE` y `THIRD_PARTY_NOTICES.md` originales.
 
 `klap agent` genera ejemplos locales para Codex, Claude Code, Cursor y clientes
 MCP genéricos. No instala agentes ni modifica configuraciones globales. Usá

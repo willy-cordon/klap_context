@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.0 — 2026-10-14 — Archify flow diagrams
+
+- Adds Archify 3.1.0 as a pinned, integrity-verified, project-local renderer
+  that remains separate from KlapContext's analysis-provider registry.
+- Projects evidenced static-analysis flows to reproducible Archify workflow IR
+  and standalone interactive HTML without requiring an AI agent at runtime.
+- Adds an offline **Flujos** portal section with diagram selection, evidence,
+  confidence, limitations, stale-state reporting and standalone artifact links.
+- Adds automatic lifecycle management, Node.js compatibility checks,
+  `--no-archify`, persistent `.klap/archify.json` settings and doctor output.
+- Keeps context generation usable when installation, validation or rendering
+  fails, and retains the last valid diagrams explicitly marked as stale.
+
 ## 0.9.0 — 2026-10-13 — Managed standard providers
 
 - Makes Graphify and Serena standard `klap init` providers, prepared in isolated

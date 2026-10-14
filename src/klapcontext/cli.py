@@ -6,6 +6,8 @@ from pathlib import Path
 from . import __version__
 from .agent_context import write as write_agent
 from .agent_setup import AgentInstructionsManager, doctor_agent, generate_mcp_configs, is_tracked
+from .archify import diagnostics as archify_diagnostics
+from .archify import generate as generate_archify
 from .git import commit, exclude_klap, is_repository
 from .freshness import evaluate_freshness
 from .portal import write as write_portal
@@ -18,7 +20,7 @@ def root_path(value: str | None) -> Path:
     return Path(value or os.getcwd()).resolve()
 
 
-def generate_all(root: Path, update: bool = False, *, shared: bool = False, allow_tracked_agents: bool = False, services: AnalysisServices | None = None, no_graphify: bool = False, no_serena: bool = False) -> dict:
+def generate_all(root: Path, update: bool = False, *, shared: bool = False, allow_tracked_agents: bool = False, services: AnalysisServices | None = None, no_graphify: bool = False, no_serena: bool = False, no_archify: bool = False) -> dict:
     if not is_repository(root):
         raise RuntimeError(f"Not a Git repository: {root}")
     exclude_klap(root)
@@ -51,6 +53,10 @@ def generate_all(root: Path, update: bool = False, *, shared: bool = False, allo
     mcp = generate_mcp_configs(root) if graphify_ready else {"status": "unavailable", "reason": "Graphify graph unavailable; native context remains usable."}
     setup = AgentInstructionsManager(root).apply(context, shared=shared, allow_tracked=allow_tracked_agents)
     context["agent_onboarding"] = {**setup.as_dict(), "mcp": mcp}
+    # Rendering is downstream of analysis: failures are reported separately
+    # and never change or invalidate the canonical context facts.
+    archify = generate_archify(root, context, disabled=no_archify)
+    context["renderers"] = {"archify": archify}
     (klap / "context.json").write_text(json.dumps(context, indent=2) + "\n", encoding="utf-8")
     write_portal(context, agent, files, klap / "index.html")
     state = {
@@ -62,6 +68,7 @@ def generate_all(root: Path, update: bool = False, *, shared: bool = False, allo
         "provider_lifecycle": lifecycle,
         "klap_version": __version__,
         "agent_onboarding": setup.as_dict(),
+        "renderers": {"archify": archify},
         "scope": {"rules_version": context["system_model"]["index_scope"]["rules_version"], "hash": scope.snapshot_hash(), "configuration": ".klap/scope.json"},
     }
     (klap / "state.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
@@ -81,16 +88,18 @@ def cmd_init(args):
     print("KlapContext\n")
     shared, allow = _permission(args, root, "Agregar o actualizar")
     try:
-        no_graphify, no_serena = getattr(args, "no_graphify", False), getattr(args, "no_serena", False)
-        context = generate_all(root, shared=shared, allow_tracked_agents=allow, no_graphify=no_graphify, no_serena=no_serena) if shared or allow or no_graphify or no_serena else generate_all(root)
+        no_graphify, no_serena, no_archify = getattr(args, "no_graphify", False), getattr(args, "no_serena", False), getattr(args, "no_archify", False)
+        context = generate_all(root, shared=shared, allow_tracked_agents=allow, no_graphify=no_graphify, no_serena=no_serena, no_archify=no_archify) if shared or allow or no_graphify or no_serena or no_archify else generate_all(root)
     except RuntimeError as error:
         print(f"✗ {error}", file=sys.stderr)
         return 1
     for name, details in context.get("analysis", {}).get("provider_lifecycle", {}).items():
         print(f"Provider {name}: {details.get('state')} · {details.get('connection')}" + (f" ({details['error']})" if details.get("error") else ""))
     graph_provider = context.get("providers", {}).get("dependency_graph", {})
+    archify = context.get("renderers", {}).get("archify", {})
     graph_line = "✓ Dependency graph generated" if graph_provider.get("state") == "OK" else "! External graph unavailable; native analyzers used"
     print("✓ Git repository detected\n" + graph_line + "\n✓ Engineering context generated\n✓ Agent context generated\n✓ Human portal generated")
+    print(("✓" if archify.get("state") == "READY" else "!") + f" Archify diagrams: {archify.get('state', 'UNKNOWN')} ({len(archify.get('diagrams', []))} generated)" + (f" · {archify.get('error')}" if archify.get("error") else ""))
     for warning in graph_provider.get("warnings", []):
         print("! " + warning)
     analysis = context.get("analysis", {})
@@ -121,14 +130,16 @@ def cmd_update(args):
     root = root_path(args.path)
     shared, allow = _permission(args, root, "Actualizar")
     try:
-        no_graphify, no_serena = getattr(args, "no_graphify", False), getattr(args, "no_serena", False)
-        context = generate_all(root, update=True, shared=shared, allow_tracked_agents=allow, no_graphify=no_graphify, no_serena=no_serena) if shared or allow or no_graphify or no_serena else generate_all(root, update=True)
+        no_graphify, no_serena, no_archify = getattr(args, "no_graphify", False), getattr(args, "no_serena", False), getattr(args, "no_archify", False)
+        context = generate_all(root, update=True, shared=shared, allow_tracked_agents=allow, no_graphify=no_graphify, no_serena=no_serena, no_archify=no_archify) if shared or allow or no_graphify or no_serena or no_archify else generate_all(root, update=True)
     except RuntimeError as error:
         print(f"✗ {error}", file=sys.stderr)
         return 1
     coverage = context["system_model"]["exploration"]["coverage"]
     scope = context["system_model"]["index_scope"]
     print(f"✓ KlapContext updated; scope: {scope['included_code_files']} code files included, {scope['excluded_files']} excluded; graph coverage: {coverage['code_files_with_graph_nodes']}/{coverage['eligible_code_files']} ({coverage['status']})")
+    archify = context.get("renderers", {}).get("archify", {})
+    print(f"{'✓' if archify.get('state') == 'READY' else '!'} Archify diagrams: {archify.get('state', 'UNKNOWN')} ({len(archify.get('diagrams', []))} generated)")
     return 0
 
 
@@ -145,6 +156,7 @@ def cmd_doctor(args):
     root = root_path(args.path)
     repaired = prepare_standard_providers(root, repair=True) if getattr(args, "repair", False) else {}
     result = doctor_agent(root, probe_mcp=getattr(args, "probe_mcp", False))
+    archify = archify_diagnostics(root)
     print("KlapContext — Agent Doctor\n")
     for name, details in repaired.items():
         print(f"Repair {name}: {details.get('state')} · {details.get('connection')}" + (f" ({details['error']})" if details.get("error") else ""))
@@ -175,6 +187,11 @@ def cmd_doctor(args):
             print("  missing dependencies: " + ", ".join(details["missing_dependencies"]))
         if details.get("error"):
             print("  error: " + details["error"])
+    print(("✓" if archify.get("available") else "!") + f" Archify renderer {archify.get('state')} · required {archify.get('required_version')}")
+    if archify.get("node_error"):
+        print("  " + archify["node_error"])
+    if archify.get("last_run", {}).get("error"):
+        print("  last error: " + archify["last_run"]["error"])
     if result["agents"].get("missing_paths"):
         print("Missing paths: " + ", ".join(result["agents"]["missing_paths"]))
     print(f"Scope: {result['scope']['included_code_files']} code files included; {result['scope']['excluded_files']} excluded")
@@ -253,6 +270,7 @@ def main(argv=None):
             command.add_argument("--allow-tracked-agents", action="store_true", help="Authorize updating a tracked AGENTS.md")
             command.add_argument("--no-serena", action="store_true", help="Do not install, connect or use Serena for this run")
             command.add_argument("--no-graphify", action="store_true", help="Do not install, run or use Graphify for this run")
+            command.add_argument("--no-archify", action="store_true", help="Do not install or run the Archify diagram renderer for this run")
         command.set_defaults(func=func)
     command = subs.add_parser("doctor", help="Diagnose project and agent readiness")
     command.add_argument("path", nargs="?", default=".")
