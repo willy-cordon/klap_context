@@ -20,8 +20,8 @@ def context_with_flow():
             "main_flows": [{
                 "name": "POST /orders", "status": "INFERRED", "confidence": 0.72,
                 "steps": [
-                    {"name": "POST /orders", "kind": "http", "path": "routes/api.php", "line": 4, "status": "CONFIRMED"},
-                    {"name": "OrderController::store", "kind": "handler", "path": "app/OrderController.php", "status": "CONFIRMED"},
+                    {"name": "POST /orders", "kind": "http", "path": "routes\\api.php", "line": 4, "status": "CONFIRMED"},
+                    {"name": "OrderController::store", "kind": "handler", "path": "app\\OrderController.php", "status": "CONFIRMED"},
                     {"name": "OrderService::create", "kind": "call", "path": "app/OrderService.php", "status": "INFERRED"},
                     {"name": "Audit::record", "kind": "event", "path": "app/Audit.php", "status": "INFERRED"},
                 ],

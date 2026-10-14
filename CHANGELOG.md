@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.1 — 2026-10-14 — Windows Archify evidence paths
+
+- Normalizes Windows backslashes in repository evidence to the repo-relative
+  POSIX paths required by Archify.
+- Rejects absolute, parent-traversal and environment-file evidence paths before
+  they reach the renderer.
+- Keeps Serena installation and lifecycle behavior unchanged.
+
 ## 0.10.0 — 2026-10-14 — Archify flow diagrams
 
 - Adds Archify 3.1.0 as a pinned, integrity-verified, project-local renderer

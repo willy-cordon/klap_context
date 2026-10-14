@@ -170,19 +170,32 @@ def _node_label(value: object) -> str:
     return label if len(label) <= 30 else label[:27] + "…"
 
 
+def _source_path(value: object) -> str | None:
+    """Return a safe repo-relative POSIX path for Archify evidence."""
+    path = str(value).strip().replace("\\", "/")
+    if not path or path.startswith(("/", "~/")) or re.match(r"^[a-zA-Z]:/", path):
+        return None
+    parts = [part for part in path.split("/") if part not in {"", "."}]
+    if not parts or ".." in parts or any(part.lower() == ".env" for part in parts):
+        return None
+    return "/".join(parts)[:240]
+
+
 def _sources(step: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
     direct_path = step.get("path") or step.get("file")
-    if direct_path and not str(direct_path).startswith(("/", "~")) and ".env" not in str(direct_path).lower():
-        source = {"path": str(direct_path)[:240], "label": str(step.get("status") or "Klap flow step")[:48]}
+    normalized = _source_path(direct_path) if direct_path else None
+    if normalized:
+        source = {"path": normalized, "label": str(step.get("status") or "Klap flow step")[:48]}
         if isinstance(step.get("line"), int) and step["line"] > 0:
             source["line"] = step["line"]
         rows.append(source)
     for item in step.get("evidence", [])[:3]:
         path = item.get("path") or item.get("file")
-        if not path or str(path).startswith(("/", "~")) or ".env" in str(path).lower():
+        normalized = _source_path(path) if path else None
+        if not normalized:
             continue
-        source = {"path": str(path)[:240], "label": str(item.get("reason") or "Klap evidence")[:48]}
+        source = {"path": normalized, "label": str(item.get("reason") or "Klap evidence")[:48]}
         line = item.get("line")
         if isinstance(line, int) and line > 0:
             source["line"] = line
