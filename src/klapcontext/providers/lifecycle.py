@@ -23,6 +23,7 @@ SERENA = {"package": "serena-agent", "version": "1.7.0", "command": "serena", "s
 # prerequisite in the same project-local runtime and pin it independently.
 SERENA_UV_VERSION = "0.13.0"
 TIMEOUT_SECONDS = 120
+INSTALL_TIMEOUT_SECONDS = 600
 
 
 @dataclass
@@ -111,9 +112,10 @@ def _compatible(value: str | None, spec: dict[str, Any]) -> bool:
 class ProviderLifecycle:
     """Prepare standard providers in isolated per-project virtual environments."""
 
-    def __init__(self, root: Path, *, timeout_seconds: int = TIMEOUT_SECONDS):
+    def __init__(self, root: Path, *, timeout_seconds: int = TIMEOUT_SECONDS, install_timeout_seconds: int = INSTALL_TIMEOUT_SECONDS):
         self.root = Path(root).resolve()
         self.timeout_seconds = timeout_seconds
+        self.install_timeout_seconds = install_timeout_seconds
 
     def prepare(self, *, no_graphify: bool = False, no_serena: bool = False, repair: bool = False) -> dict[str, dict[str, Any]]:
         values = {
@@ -158,7 +160,7 @@ class ProviderLifecycle:
             packages = [f"{spec['package']}=={spec['version']}"]
             if name == "serena":
                 packages.append(f"uv=={SERENA_UV_VERSION}")
-            subprocess.run([str(python), "-m", "pip", "install", "--no-input", "--disable-pip-version-check", *packages], cwd=self.root, text=True, capture_output=True, timeout=self.timeout_seconds, check=True)
+            subprocess.run([str(python), "-m", "pip", "install", "--no-input", "--disable-pip-version-check", *packages], cwd=self.root, text=True, capture_output=True, timeout=self.install_timeout_seconds, check=True)
         except (OSError, subprocess.SubprocessError) as error:
             detail = getattr(error, "stderr", None) or str(error)
             return ProviderRuntime(name, spec["version"], "FAILED", source="managed", error=detail[-1000:])

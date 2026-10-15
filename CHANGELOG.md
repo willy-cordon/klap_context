@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.2 — 2026-10-15 — Nested-root rendering and Serena setup
+
+- Resolves the Git top-level separately from the selected analysis directory so
+  Archify validates evidence correctly when `klap init` runs from a nested
+  folder such as `src/`.
+- Prefixes projected evidence paths with the analyzed subdirectory while
+  preserving POSIX repo-relative paths in Archify artifacts.
+- Allows up to ten minutes for Serena's first-time installation while keeping
+  regular provider checks bounded to the existing timeout.
+
 ## 0.10.1 — 2026-10-14 — Windows Archify evidence paths
 
 - Normalizes Windows backslashes in repository evidence to the repo-relative

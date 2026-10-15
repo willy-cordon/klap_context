@@ -47,6 +47,11 @@ def test_projection_preserves_branch_evidence_confidence_and_limitations():
     assert "inferred static-analysis" in " ".join(diagram["limitations"])
 
 
+def test_projection_prefixes_evidence_for_nested_analysis_root():
+    diagram = project_flows(context_with_flow(), evidence_prefix="src")[0]
+    assert diagram["ir"]["nodes"][0]["sources"][0]["path"] == "src/routes/api.php"
+
+
 def test_projection_does_not_invent_flow_without_two_related_steps():
     context = context_with_flow()
     context["system_model"]["main_flows"] = [{"name": "orphan", "steps": [{"name": "OnlyNode"}]}]
@@ -107,3 +112,28 @@ def test_real_archify_310_renders_projected_fixture(tmp_path):
     assert html.is_file() and "<!doctype html>" in html.read_text(encoding="utf-8").lower()
     source = tmp_path / ".klap" / result.diagrams[0]["ir"]
     assert json.loads(source.read_text())["diagram_type"] == "workflow"
+
+
+@pytest.mark.skipif(not os.environ.get("KLAP_ARCHIFY_RUNTIME"), reason="set KLAP_ARCHIFY_RUNTIME to an unpacked Archify 3.1.0 runtime")
+def test_real_archify_uses_git_top_level_when_analysis_root_is_nested(tmp_path):
+    runtime = Path(os.environ["KLAP_ARCHIFY_RUNTIME"])
+    analysis_root = tmp_path / "src"
+    route = analysis_root / "routes" / "api.php"
+    controller = analysis_root / "app" / "OrderController.php"
+    for path in (route, controller):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("<?php\n// fixture\n// fixture\n// fixture\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "fixture@example.test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Fixture"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", "https://example.test/fixture.git"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "fixture"], cwd=tmp_path, check=True)
+    context = context_with_flow()
+    context["system_model"]["main_flows"][0]["steps"] = context["system_model"]["main_flows"][0]["steps"][:2]
+    context["system_model"]["main_flows"][0]["edges"] = [{"from": 0, "to": 1, "role": "main"}]
+    context["project"]["git_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=tmp_path, text=True).strip()
+    result = render(analysis_root, context, ArchifyResult("READY", executable=str(runtime / "bin" / "archify.mjs"), installed_version="3.1.0"))
+    assert result.state == "READY"
+    source = analysis_root / ".klap" / result.diagrams[0]["ir"]
+    assert json.loads(source.read_text())["nodes"][0]["sources"][0]["path"] == "src/routes/api.php"

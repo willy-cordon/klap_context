@@ -61,6 +61,11 @@ def test_serena_without_uv_is_repaired_in_an_isolated_runtime(tmp_path, monkeypa
     assert called
 
 
+def test_provider_install_has_a_longer_timeout_than_interactive_checks(tmp_path):
+    lifecycle = ProviderLifecycle(tmp_path, timeout_seconds=120)
+    assert lifecycle.install_timeout_seconds >= 600
+
+
 def test_init_flags_are_forwarded_to_generation(tmp_path, monkeypatch):
     seen = {}
 

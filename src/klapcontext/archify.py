@@ -181,11 +181,12 @@ def _source_path(value: object) -> str | None:
     return "/".join(parts)[:240]
 
 
-def _sources(step: dict[str, Any]) -> list[dict[str, Any]]:
+def _sources(step: dict[str, Any], evidence_prefix: str = "") -> list[dict[str, Any]]:
     rows = []
     direct_path = step.get("path") or step.get("file")
     normalized = _source_path(direct_path) if direct_path else None
     if normalized:
+        normalized = f"{evidence_prefix}/{normalized}" if evidence_prefix else normalized
         source = {"path": normalized, "label": str(step.get("status") or "Klap flow step")[:48]}
         if isinstance(step.get("line"), int) and step["line"] > 0:
             source["line"] = step["line"]
@@ -195,6 +196,7 @@ def _sources(step: dict[str, Any]) -> list[dict[str, Any]]:
         normalized = _source_path(path) if path else None
         if not normalized:
             continue
+        normalized = f"{evidence_prefix}/{normalized}" if evidence_prefix else normalized
         source = {"path": normalized, "label": str(item.get("reason") or "Klap evidence")[:48]}
         line = item.get("line")
         if isinstance(line, int) and line > 0:
@@ -203,7 +205,7 @@ def _sources(step: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def project_flows(context: dict[str, Any], *, limits: dict[str, Any] | None = None, repository_url: str | None = None) -> list[dict[str, Any]]:
+def project_flows(context: dict[str, Any], *, limits: dict[str, Any] | None = None, repository_url: str | None = None, evidence_prefix: str = "") -> list[dict[str, Any]]:
     """Project evidenced Klap flows to deterministic Archify workflow IRs."""
     limits = {**DEFAULT_LIMITS, **(limits or {})}
     candidates = context.get("system_model", {}).get("main_flows", [])
@@ -226,9 +228,9 @@ def project_flows(context: dict[str, Any], *, limits: dict[str, Any] | None = No
             node_id = f"step-{index}"
             lane_label = str(step.get("type") or step.get("role") or "Code").replace("_", " ").title()
             lanes.append({"id": lane_id, "label": lane_label})
-            source_rows = _sources(step)
+            source_rows = _sources(step, evidence_prefix)
             if index == 0 and not source_rows:
-                source_rows = _sources({"evidence": flow.get("evidence", [])})
+                source_rows = _sources({"evidence": flow.get("evidence", [])}, evidence_prefix)
             kind = str(step.get("kind") or step.get("type") or "code").lower()
             component_type = "external" if "external" in kind else "database" if any(word in kind for word in ("store", "repository", "model", "database")) else "messagebus" if any(word in kind for word in ("queue", "event", "dispatch", "listener")) else "frontend" if kind in {"http", "route"} else "backend"
             node = {"id": node_id, "lane": lane_id, "col": index, "type": component_type, "label": _node_label(step["name"]), "sublabel": f"{kind} · {str(step.get('status') or flow.get('status') or 'UNKNOWN').lower()}"[:120], "width": 168}
@@ -288,14 +290,21 @@ def render(root: Path, context: dict[str, Any], runtime: ArchifyResult, *, limit
     if error:
         return ArchifyResult("UNAVAILABLE", error=error)
     repository_url = None
+    repository_root = root
+    evidence_prefix = ""
     try:
+        top_level = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=root, text=True, capture_output=True, timeout=5, check=False)
+        if top_level.returncode == 0 and top_level.stdout.strip():
+            repository_root = Path(top_level.stdout.strip()).resolve()
+            relative_root = root.relative_to(repository_root)
+            evidence_prefix = "" if relative_root == Path(".") else relative_root.as_posix()
         remote = subprocess.run(["git", "remote", "get-url", "origin"], cwd=root, text=True, capture_output=True, timeout=5, check=False)
         candidate = remote.stdout.strip()
         if remote.returncode == 0 and candidate and not re.search(r"https?://[^/@]+@", candidate):
             repository_url = candidate
     except (OSError, subprocess.SubprocessError):
         pass
-    projected = project_flows(context, limits=settings, repository_url=repository_url)
+    projected = project_flows(context, limits=settings, repository_url=repository_url, evidence_prefix=evidence_prefix)
     if not projected:
         return ArchifyResult("NO_RESULTS", executable=runtime.executable, installed_version=runtime.installed_version, generated_at=datetime.now(timezone.utc).isoformat(), warnings=["No flow contained at least two evidenced static-analysis steps."])
     destination = output_root(root)
@@ -308,10 +317,10 @@ def render(root: Path, context: dict[str, Any], runtime: ArchifyResult, *, limit
         source.write_text(json.dumps(item.pop("ir"), indent=2) + "\n", encoding="utf-8")
         temporary = destination / f".{item['id']}.tmp.html"
         try:
-            validate = subprocess.run([node, runtime.executable, "validate", "workflow", str(source), "--json", "--repo-root", str(root)], cwd=root, text=True, capture_output=True, timeout=timeout, check=False, env={**os.environ, "ARCHIFY_UPDATE_CHECK_DISABLED": "1"})
+            validate = subprocess.run([node, runtime.executable, "validate", "workflow", str(source), "--json", "--repo-root", str(repository_root)], cwd=root, text=True, capture_output=True, timeout=timeout, check=False, env={**os.environ, "ARCHIFY_UPDATE_CHECK_DISABLED": "1"})
             if validate.returncode:
                 raise RuntimeError((validate.stderr or validate.stdout or "Archify validation failed")[-1200:])
-            rendered = subprocess.run([node, runtime.executable, "render", "workflow", str(source), str(temporary), "--repo-root", str(root)], cwd=root, text=True, capture_output=True, timeout=timeout, check=False, env={**os.environ, "ARCHIFY_UPDATE_CHECK_DISABLED": "1"})
+            rendered = subprocess.run([node, runtime.executable, "render", "workflow", str(source), str(temporary), "--repo-root", str(repository_root)], cwd=root, text=True, capture_output=True, timeout=timeout, check=False, env={**os.environ, "ARCHIFY_UPDATE_CHECK_DISABLED": "1"})
             if rendered.returncode or not temporary.is_file():
                 raise RuntimeError((rendered.stderr or rendered.stdout or "Archify render failed")[-1200:])
             temporary.replace(output)
