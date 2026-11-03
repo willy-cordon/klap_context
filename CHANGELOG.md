@@ -10,6 +10,7 @@
   while retaining native context. Intermittent native Windows crashes remain an
   upstream limitation; see `docs/GRAPH_FIRST.md`.
 - Tests Git intelligence in both named-branch and detached-HEAD checkouts.
+- Fixes MCP timeout reporting on Python 3.10.
 
 ## 0.10.2 — 2026-10-15 — Nested-root rendering and Serena setup
 

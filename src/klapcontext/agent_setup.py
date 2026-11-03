@@ -270,7 +270,7 @@ def probe_graphify_mcp(root: Path, timeout: float = 8.0) -> dict:
         return {"startable": False, "connection_verified": False, "reason": "graphify.serve no está instalado en el intérprete actual", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": "Python module unavailable"}}}
     try:
         return asyncio.run(asyncio.wait_for(_probe_graphify_mcp_async(graph), timeout=timeout))
-    except TimeoutError:
+    except (TimeoutError, asyncio.TimeoutError):
         return {"startable": False, "connection_verified": False, "reason": f"MCP probe timed out after {timeout:g}s", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": "Timeout"}}}
     except Exception as error:
         return {"startable": False, "connection_verified": False, "reason": f"MCP probe failed: {type(error).__name__}: {error}", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": type(error).__name__}}}
