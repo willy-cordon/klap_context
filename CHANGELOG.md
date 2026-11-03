@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0 — 2026-11-03 — Graph-first portal
+
+- Adds a standalone offline Graphify graph with search, selection, zoom, pan,
+  node dragging and mobile support; limits each view to 350 visible nodes.
+- Removes Serena and Archify integrations and their CLI flags. Existing user
+  artifacts are preserved; native analysis, agent context and MCP remain available.
+- Uses AST extraction without clustering and reports Graphify failures explicitly
+  while retaining native context. Intermittent native Windows crashes remain an
+  upstream limitation; see `docs/GRAPH_FIRST.md`.
+- Tests Git intelligence in both named-branch and detached-HEAD checkouts.
+- Fixes MCP timeout reporting on Python 3.10.
+
 ## 0.10.2 — 2026-10-15 — Nested-root rendering and Serena setup
 
 - Resolves the Git top-level separately from the selected analysis directory so

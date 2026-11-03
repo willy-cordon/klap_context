@@ -144,11 +144,10 @@ def generate(root: Path, update: bool = False, scope: IndexScope | None = None) 
     # Graphify's supported --out writes one graphify-out directory beneath the
     # selected parent. The temporary ignore file applies central scope before
     # AST extraction while remaining compatible across supported releases.
-    command = [*prefix, "extract", str(root), "--code-only", "--out", str(output_parent)]
-    if update:
-        # A normal extract reuses Graphify's manifest/cache in the canonical
-        # directory while still pruning files that became excluded.
-        command.append("--no-cluster")
+    # Both init and update need canonical AST facts, not community clustering.
+    # Clustering is unused by the portal. Normal extract still reuses/prunes
+    # the manifest cache while preserving actual nodes and relations.
+    command = [*prefix, "extract", str(root), "--code-only", "--no-cluster", "--out", str(output_parent)]
     try:
         with _scoped_graphifyignore(root, scope):
             result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=120)
@@ -156,7 +155,7 @@ def generate(root: Path, update: bool = False, scope: IndexScope | None = None) 
         raise GraphifyError("Graphify extraction timed out after 120s") from error
     graph = canonical_graph(root)
     if result.returncode != 0 or not graph.exists():
-        message = result.stderr.strip() or result.stdout.strip() or "Graphify did not create the canonical graph.json"
+        message = result.stderr.strip() or result.stdout.strip() or f"Graphify extraction failed (exit {result.returncode}); canonical graph unavailable"
         raise GraphifyError(message)
     try:
         payload = json.loads(graph.read_text(encoding="utf-8"))

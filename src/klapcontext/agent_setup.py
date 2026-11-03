@@ -270,7 +270,7 @@ def probe_graphify_mcp(root: Path, timeout: float = 8.0) -> dict:
         return {"startable": False, "connection_verified": False, "reason": "graphify.serve no está instalado en el intérprete actual", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": "Python module unavailable"}}}
     try:
         return asyncio.run(asyncio.wait_for(_probe_graphify_mcp_async(graph), timeout=timeout))
-    except TimeoutError:
+    except (TimeoutError, asyncio.TimeoutError):
         return {"startable": False, "connection_verified": False, "reason": f"MCP probe timed out after {timeout:g}s", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": "Timeout"}}}
     except Exception as error:
         return {"startable": False, "connection_verified": False, "reason": f"MCP probe failed: {type(error).__name__}: {error}", "stages": {"graph_present": {"ok": graph.exists(), "detail": "Canonical graph present"}, "server_launch": {"ok": False, "detail": type(error).__name__}}}
@@ -290,6 +290,4 @@ def doctor_agent(root: Path, *, probe_mcp: bool = False) -> dict:
     provider = state.get("provider", {})
     graph_expected = provider.get("name") == "graphify" and provider.get("state", "OK") == "OK"
     mcp_probe = probe_graphify_mcp(root) if probe_mcp and graph_expected else {"startable": bool(command_prefix() and graph.exists()), "connection_verified": False, "reason": "Use --probe-mcp para comprobar el protocolo MCP" if graph_expected else "Graph provider is optional; native analysis is active", "stages": {}}
-    from .providers.optional import optional_provider_diagnostics
-    optional_providers = optional_provider_diagnostics(root, probe=probe_mcp)
-    return {"agents": agents, "context": {"available": (root / ".klap" / "agent-context.md").exists() and (root / ".klap" / "context.json").exists()}, "freshness": freshness, "scope": scope, "provider": provider, "graph": {"available": graph.exists(), "required": graph_expected, "canonical": ".klap/graphify-out/graph.json", "legacy_duplicates": legacy_graphs(root)}, "mcp": {"configured": all(path.exists() for path in mcp_files), "required": graph_expected, **mcp_probe}, "optional_providers": optional_providers}
+    return {"agents": agents, "context": {"available": (root / ".klap" / "agent-context.md").exists() and (root / ".klap" / "context.json").exists()}, "freshness": freshness, "scope": scope, "provider": provider, "graph": {"available": graph.exists(), "required": graph_expected, "canonical": ".klap/graphify-out/graph.json", "legacy_duplicates": legacy_graphs(root)}, "mcp": {"configured": all(path.exists() for path in mcp_files), "required": graph_expected, **mcp_probe}, "optional_providers": {}}

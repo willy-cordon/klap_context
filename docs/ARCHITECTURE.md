@@ -43,9 +43,7 @@ cambios en Agent Intelligence ni en esa reconstrucción.
 
 - `providers/`: contratos pequeños, modelos normalizados, registry y resolver
   por capacidad. `GraphifyProvider` es un adapter opcional y los analizadores
-  nativos participan con la misma API. Serena vive en un adapter MCP separado,
-  sin imports del producto en el núcleo. Ver [PROVIDERS.md](PROVIDERS.md) y
-  [SERENA.md](SERENA.md).
+  nativos participan con la misma API. Ver [PROVIDERS.md](PROVIDERS.md).
 - `providers/code_intelligence.py`: provider local Tree-sitter PHP que genera
   un índice cacheado de símbolos y relaciones estructurales por demanda.
 - `detector.py`: detecta lenguaje, framework e infraestructura.
@@ -54,8 +52,9 @@ cambios en Agent Intelligence ni en esa reconstrucción.
   estado y confianza. Los snippets de `.env*` nunca se emiten.
 - `context_builder.py`: compone el `System Model`; sólo conecta resultados,
   no vuelve a escanear el grafo.
-- `agent_context.py` y `portal.py`: renderizan el mismo modelo para agentes y
-  personas.
+- `agent_context.py`: conserva el contexto técnico y sus evidencias para agentes.
+- `portal.py`: presenta el grafo real de Graphify y el historial Git, sin dashboard.
+  Reutiliza vis-network 9.1.6 local, con búsqueda global y vistas acotadas.
 
 ## Fase 1 completada
 

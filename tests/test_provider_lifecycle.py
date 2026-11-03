@@ -12,7 +12,7 @@ def test_project_configuration_disables_provider_before_any_install(tmp_path, mo
     config.write_text(json.dumps({"providers": {"graphify": {"enabled": False}}}), encoding="utf-8")
     lifecycle = ProviderLifecycle(tmp_path)
     monkeypatch.setattr(lifecycle, "_install", lambda *_: (_ for _ in ()).throw(AssertionError("must not install")))
-    result = lifecycle.prepare(no_serena=True)
+    result = lifecycle.prepare()
     assert result["graphify"]["state"] == "SKIPPED"
     assert result["graphify"]["source"] == "project configuration"
 
@@ -20,7 +20,7 @@ def test_project_configuration_disables_provider_before_any_install(tmp_path, mo
 def test_cli_opt_out_is_recorded_without_installing(tmp_path, monkeypatch):
     lifecycle = ProviderLifecycle(tmp_path)
     monkeypatch.setattr(lifecycle, "_install", lambda *_: (_ for _ in ()).throw(AssertionError("must not install")))
-    result = lifecycle.prepare(no_graphify=True, no_serena=True)
+    result = lifecycle.prepare(no_graphify=True)
     assert {value["state"] for value in result.values()} == {"SKIPPED"}
     assert (tmp_path / ".klap" / "provider-state.json").exists()
 
@@ -48,19 +48,6 @@ def test_compatible_existing_provider_is_not_reinstalled(tmp_path, monkeypatch):
     assert result.state == "READY" and result.source == "system"
 
 
-def test_serena_without_uv_is_repaired_in_an_isolated_runtime(tmp_path, monkeypatch):
-    lifecycle = ProviderLifecycle(tmp_path)
-    monkeypatch.setattr("klapcontext.providers.lifecycle.shutil.which", lambda command: f"/tools/{command}" if command == "serena" else None)
-    monkeypatch.setattr("klapcontext.providers.lifecycle._version", lambda *_: "1.7.0")
-    monkeypatch.setattr(lifecycle, "_serena_has_uv", lambda _source: False)
-    expected = ProviderRuntime("serena", "1.7.0", "READY", "1.7.0", "managed", "/runtime/serena")
-    called = []
-    monkeypatch.setattr(lifecycle, "_install", lambda *args: called.append(args) or expected)
-    monkeypatch.setattr(lifecycle, "_verify", lambda runtime: runtime)
-    assert lifecycle._ensure("serena", {"version": "1.7.0", "command": "serena", "series": (1, 7)}, skip=False, repair=False) is expected
-    assert called
-
-
 def test_provider_install_has_a_longer_timeout_than_interactive_checks(tmp_path):
     lifecycle = ProviderLifecycle(tmp_path, timeout_seconds=120)
     assert lifecycle.install_timeout_seconds >= 600
@@ -74,9 +61,9 @@ def test_init_flags_are_forwarded_to_generation(tmp_path, monkeypatch):
         return {"providers": {"dependency_graph": {}}, "analysis": {"providers": [], "status": "COMPLETE"}, "agent_onboarding": {}, "system_model": {"exploration": {"coverage": {"code_files_with_graph_nodes": 0, "eligible_code_files": 0, "status": "EMPTY"}}, "index_scope": {"included_code_files": 0, "excluded_files": 0, "rules_version": 1}}, "project": {"name": "fixture"}, "stack": {}}
 
     monkeypatch.setattr(cli, "generate_all", generated)
-    args = type("Args", (), {"path": str(tmp_path), "no_graphify": True, "no_serena": True})()
+    args = type("Args", (), {"path": str(tmp_path), "no_graphify": True})()
     assert cli.cmd_init(args) == 0
-    assert seen["no_graphify"] is True and seen["no_serena"] is True
+    assert seen["no_graphify"] is True
 
 
 def test_doctor_repair_prepares_standard_providers(tmp_path, monkeypatch):

@@ -22,7 +22,7 @@ _SERVICE_CACHE: OrderedDict[str, AnalysisServices] = OrderedDict()
 _SERVICE_CACHE_LOCK = Lock()
 
 def _services(path: str) -> AnalysisServices:
-    """Reuse provider sessions (notably Serena stdio) across MCP calls per root."""
+    """Reuse analysis services across MCP calls per root."""
     key = str(Path(path).resolve())
     with _SERVICE_CACHE_LOCK:
         service = _SERVICE_CACHE.get(key)
@@ -125,7 +125,7 @@ def klap_flows_and_endpoints(path: str = ".", max_results: int = 50, max_depth: 
     for flow in context.get("flows", [])[:limit]:
         item = dict(flow); item["steps"] = list(item.get("steps", []))[:depth]; flows.append(item)
     endpoints = [item for item in context.get("entry_points", []) if item.get("type") == "HTTP"][:limit]
-    return {"source": source, "dynamic": False, "flows": flows, "endpoints": endpoints, "limitations": ["The HTML portal and this result contain precompiled static evidence; they do not simulate live Serena queries."]}
+    return {"source": source, "dynamic": False, "flows": flows, "endpoints": endpoints, "limitations": ["This result contains precompiled static evidence, not dynamic runtime traces."]}
 
 @mcp.tool()
 def klap_debug_context(task: str, path: str = ".", detail: str = "standard", max_tokens: int = 5000) -> dict:
