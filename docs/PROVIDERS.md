@@ -1,8 +1,9 @@
 # Proveedores de análisis
 
-KlapContext selecciona capacidades, no productos. CLI, compilador de contexto,
-portal y MCP consumen `AnalysisServices`; ningún consumidor elige Graphify o un
-analizador local directamente.
+El contexto para agentes y MCP resuelve capacidades mediante `AnalysisServices`,
+con analizadores nativos como fallback. El portal humano es graph-first: la CLI
+le entrega el grafo ?nicamente cuando el resultado exitoso proviene de Graphify;
+no presenta el fallback nativo como si fuera un grafo de Graphify.
 
 ## Capas
 
@@ -23,14 +24,14 @@ adapters Graphify | analizadores nativos | adapters externos
 `providers/lifecycle.py` prepara los binarios estándar antes de componer el
 registry, pero no participa en la resolución de capacidades. Usa entornos
 aislados por proyecto en `.klap/provider-runtime/`, con Graphify `0.9.66`,
-Serena `1.7.0` y, para su backend LSP, `uv 0.13.0` fijados. El estado
+como único runtime externo administrado. El estado
 reproducible queda en
 `.klap/provider-state.json`: versión requerida/instalada, origen, ejecutable,
 estado de instalación, conexión, capacidades verificadas y último error.
 
 Precedencia: `enabled:false` en `.klap/providers.json` impide toda preparación
-persistente; `--no-serena` y `--no-graphify` omiten el proveedor sólo para la
-ejecución actual; en ausencia de ambos, los proveedores estándar se preparan.
+persistente; `--no-graphify` omite el proveedor sólo para la
+ejecución actual; en ausencia de esas opciones, los proveedores estándar se preparan.
 Un fallo deja el resultado en `FAILED` o `PARTIAL` y el resolver mantiene los
 proveedores nativos como fallback. No se modifican PATH ni configuraciones MCP
 globales.
@@ -45,11 +46,6 @@ globales.
 - `providers/resolver.py` filtra por idioma/framework, aplica prioridad por
   capacidad, disponibilidad dinámica, timeout y fallback explícito.
 - `providers/graphify.py` es la frontera exclusiva de Graphify.
-- `providers/optional.py` es la única frontera de composición para adapters
-  opcionales; mantiene imports concretos fuera del núcleo y centraliza doctor.
-- `providers/serena/` es un adapter MCP stdio independiente y read-only. La
-  arquitectura, allowlist, configuración y compatibilidad están en
-  [SERENA.md](SERENA.md).
 - `providers/native.py` conserva los analizadores locales. El fallback
   `klap-native` permite generar contexto aunque no haya grafo externo.
 
@@ -119,15 +115,6 @@ no contiene ramas específicas de Graphify.
     "php-tree-sitter": {
       "enabled": true,
       "priorities": {"symbol_lookup": 50, "call_graph": 50}
-    },
-    "serena": {
-      "enabled": true,
-      "mode": "auto",
-      "timeout_seconds": 30,
-      "command": "serena",
-      "args": ["start-mcp-server", "--context=ide", "--enable-web-dashboard=false", "--open-web-dashboard=false"],
-      "max_results": 50,
-      "max_answer_chars": 20000
     }
   }
 }
@@ -136,12 +123,6 @@ no contiene ramas específicas de Graphify.
 Un proveedor no registrado genera una advertencia de configuración. Un adapter
 sin restricción de idioma/framework es agnóstico y puede participar aunque el
 lenguaje no haya sido detectado.
-
-Serena se registra si está configurado o su comando es detectable. Durante
-`init` se inicia sólo para un handshake y una comprobación bounded de overview
-sobre un archivo elegible; el resto de las consultas semánticas permanece bajo
-demanda. Las capacidades se reducen dinámicamente a `tools/list`; no basta con
-que el paquete esté instalado.
 
 ## Adapter externo mínimo
 

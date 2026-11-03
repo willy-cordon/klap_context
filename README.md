@@ -1,196 +1,117 @@
-# KlapContext
+﻿# KlapContext
 
-**Understand an unfamiliar codebase before changing it.**
+**El grafo es el producto.**
 
-KlapContext convierte evidencia de código en un modelo del sistema: puntos de
-entrada, flujos, automatizaciones, integraciones y sus incertidumbres.
-Graphify puede funcionar como proveedor estándar de análisis técnico;
-Serena puede sumar navegación semántica on demand por MCP; KlapContext conserva
-analizadores locales y transforma toda evidencia mediante contratos
-desacoplados para personas y agentes de IA.
+Abrí un repositorio y explorá su arquitectura: nombre del proyecto → grafo
+interactivo → conexiones. [Graphify](https://github.com/Graphify-Labs/graphify)
+genera los nodos y relaciones; KlapContext conserva contexto técnico verificable
+para agentes y analizadores nativos complementarios.
 
-## Agent Intelligence
-
-KlapContext planifica el **mínimo contexto relevante** antes de que un agente
-empiece a cambiar código. Según la intención —entender, modificar, depurar,
-probar, refactorizar o medir impacto— selecciona capacidades y proveedores
-necesarios, sin acoplarse a una herramienta externa ni cargar archivos enteros
-por defecto. La compilación de Task Context llegará en los siguientes sprints.
-
-KlapContext convierte un repositorio en contexto de ingeniería reutilizable: un
-portal estático para personas y un briefing compacto para agentes de IA. Puede
-usar [Graphify](https://github.com/Graphify-Labs/graphify) como motor local de
-grafo, pero `klap init` sigue funcionando con proveedores nativos si no está.
-
-```text
-Repositorio → KlapContext → Contexto de ingeniería
-                              ├── Portal humano
-                              └── Contexto para agentes
-```
-
-## Instalación
+## Instalación y primer uso
 
 ```bash
 pip install klapcontext
-```
-
-La instalación base no incorpora proveedores en el intérprete de KlapContext.
-El primer `klap init` los prepara en entornos aislados bajo
-`.klap/provider-runtime/`.
-
-## Primer uso
-
-```bash
 cd mi-proyecto
 klap init
 klap open
 ```
 
-`klap init` ejecuta los proveedores disponibles, escribe artefactos locales
-bajo `.klap/` y prepara un `AGENTS.md` privado para que los agentes descubran el
-contexto progresivamente. Ambos se agregan a `.git/info/exclude`; KlapContext
-nunca modifica tu `.gitignore`.
-
-`klap init` prepara Graphify y Serena con versiones fijadas si no encuentra una
-instalación compatible. Si una preparación falla, los analizadores nativos
-siguen generando contexto y el resumen registra el motivo. Graphify ejecuta una extracción real y usa
-`.klap/graphify-out/graph.json` en `context.json`, el portal y la configuración
-MCP. Si no está instalado o falla, los analizadores nativos siguen generando un
-contexto útil y el reporte queda `PARTIAL`, con proveedores detectados,
-ejecutados y omitidos (incluido el motivo). `context.json.analysis` conserva la
-cobertura, trazas y contribuciones combinadas con procedencia. Se puede
-deshabilitar Graphify explícitamente con
-`.klap/providers.json` y `{"providers":{"graphify":{"enabled":false}}}`.
-
-[Serena](https://github.com/oraios/serena) se integra de forma independiente y
-intercambiable. Si falta una instalación compatible, Serena 1.7.0 se prepara
-en el runtime local; KlapContext descubre sus
-tools reales por MCP y ofrece símbolos, definiciones, referencias,
-implementaciones e impacto por consulta. Durante `klap init` sólo ejecuta una
-comprobación acotada de overview sobre un archivo elegible para verificar MCP;
-no realiza búsquedas semánticas amplias, y nunca llama sus tools de escritura, shell,
-onboarding o memorias. Ver [instalación, configuración, seguridad,
-compatibilidad y límites](docs/SERENA.md).
-
-Para compartir las instrucciones de onboarding con el equipo:
+El primer `init` prepara Graphify 0.9.66 en un entorno aislado bajo
+`.klap/provider-runtime/` si no existe una instalación compatible. No modifica
+el Python global ni PATH. Una falla de instalación o extracción se informa;
+los analizadores nativos siguen generando contexto, sin presentar su salida
+como un grafo de Graphify.
 
 ```bash
-klap init --shared
+klap update             # actualiza contexto y grafo
+klap status             # comprueba vigencia
+klap init --no-graphify # sólo contexto nativo, sin instalación externa
+klap doctor --agent     # diagnóstico
 ```
 
-El modo compartido genera un `AGENTS.md` versionable, sin rutas personales ni
-secretos. Si el archivo ya existe, KlapContext preserva su contenido y sólo
-administra el bloque entre `KLAPCONTEXT:START` y `KLAPCONTEXT:END`. Un archivo
-versionado nunca se modifica silenciosamente en modo privado.
+También podés deshabilitar Graphify persistentemente en `.klap/providers.json`:
 
-El portal incluye un árbol navegable de archivos y símbolos extraídos del grafo,
-recorridos de llamadas y cambios recientes de Git. El contexto del agente y
-`klap context` usan las mismas rutas y símbolos. El indicador de cobertura cuenta
-archivos de código con al menos un nodo en Graphify: **no mide exhaustividad de
-funciones ni garantiza que se hayan resuelto rutas dinámicas**. Los recorridos
-son caminos del grafo, no afirmaciones de que una ruta HTTP los ejecuta; sus
-ramas pueden requerir inspección del código original.
-
-Antes de invocar Graphify, KlapContext calcula un **Index Scope** central desde
-Git, manifests y reglas por stack. Excluye dependencias, caches, builds,
-minificados y recursos binarios, pero permite excepciones locales en
-`.klap/scope.json`. Revisalo con:
-
-```bash
-klap scope
-klap scope --json
+```json
+{"providers":{"graphify":{"enabled":false}}}
 ```
 
-## Comandos
+## Portal local
 
-| Comando | Descripción |
-| --- | --- |
-| `klap init [ruta]` | Genera el contexto inicial. |
-| `klap init --no-serena [ruta]` | Omite instalación, conexión y uso de Serena en esta ejecución. |
-| `klap init --no-graphify [ruta]` | Omite instalación y ejecución de Graphify en esta ejecución. |
-| `klap init --no-archify [ruta]` | Omite instalación y ejecución del renderer Archify en esta ejecución. |
-| `klap update [ruta]` | Reutiliza proveedores compatibles y actualiza el contexto. |
-| `klap update --no-archify [ruta]` | Actualiza el contexto sin regenerar diagramas Archify. |
-| `klap status [ruta]` | Indica si el contexto está actualizado respecto a Git. |
-| `klap open [ruta]` | Abre el portal humano estático. |
-| `klap agent [ruta]` | Muestra la configuración MCP local de Graphify. |
-| `klap context "tarea" [ruta]` | Compila un contexto focalizado reutilizando `.klap/context.json` si existe. |
-| `klap doctor --agent [ruta]` | Comprueba AGENTS.md, freshness, Graphify y configuración MCP. |
-| `klap doctor --agent --repair [ruta]` | Repara proveedores estándar en runtimes locales. |
-| `klap scope [ruta]` | Explica archivos incluidos/excluidos y sus motivos. |
-| `klap migrate-graph [ruta]` | Planea la migración de grafos legacy; `--apply` preserva respaldos. |
-| `klap --version` | Muestra la versión instalada. |
+El menú contiene únicamente **Inicio** y **Git**. Inicio muestra el nombre real
+del proyecto y un lienzo de grafo a pantalla completa, sin tarjetas de métricas.
 
-## Salidas
+- Rueda: zoom. Arrastre del fondo: desplazamiento. Arrastre de nodo: posición.
+- Selección: nombre, tipo, archivo/línea cuando existen y relaciones resaltadas.
+- Buscar: archivos o símbolos de todo el grafo, incluso fuera de la vista actual.
+- Conexiones: enfocar los vecinos reales del nodo seleccionado.
+- Ajustar y Ver todo: reencuadrar o volver a la vista inicial.
+- Git: historial de cambios reciente, como en la versión anterior.
+
+El HTML incluye los datos y el mismo motor de visualización que Graphify
+(vis-network 9.1.6, licencia MIT), sin CDN, servidor ni solicitudes de red.
+Podés abrir `.klap/index.html` directamente con `file://` o copiar ese único
+archivo a otra máquina. No se agregan relaciones para mejorar el diseño.
+
+En grafos grandes, la vista inicial muestra como máximo 350 nodos ordenados por
+grado y lo indica como vista parcial. La búsqueda sigue cubriendo todos los
+nodos; el enfoque muestra hasta 349 vecinos. Las conexiones dibujadas son
+exclusivamente las del grafo original cuyos extremos están visibles. No es un
+trazado de ejecución ni garantiza resolver llamadas dinámicas.
+
+## Contexto para agentes
+
+La simplificación visual no elimina entradas, flujos, evidencias ni alcance del
+índice de los artefactos técnicos:
 
 ```text
 .klap/
-├── context.json          # modelo técnico, de sistema y humano
-├── agent-context.md      # briefing para agentes de IA
-├── index.html            # portal humano, sin servidor
-├── state.json            # metadatos de freshness
-├── archify-state.json    # estado separado del renderer
-├── flows/                # IR reproducible + HTML interactivo por flujo
-├── renderer-runtime/     # Archify fijado y aislado por proyecto
-├── mcp/                  # configuración local Graphify, cuando está disponible
-└── graphify-out/         # grafo/informe opcionales de Graphify
+├── index.html            # portal autónomo: Inicio + Git
+├── context.json          # contexto estructurado, evidencia y relaciones
+├── agent-context.md      # briefing progresivo
+├── graphify-out/         # graph.json y exportaciones originales de Graphify
+├── provider-runtime/     # entorno aislado de Graphify
+├── provider-state.json   # estado del runtime
+├── state.json            # snapshot y vigencia
+├── scope.json            # reglas de alcance
+└── mcp/                  # ejemplos de conexión Graphify MCP
 ```
 
-### Diagramas de flujos con Archify
+`AGENTS.md` se genera con un bloque administrado, preservando contenido ajeno.
+Por defecto los artefactos privados se agregan a `.git/info/exclude`, nunca a
+`.gitignore`. Un `AGENTS.md` versionado requiere autorización para actualizarlo.
+Para compartirlo: `klap init --shared`.
 
-`klap init` y `klap update` preparan Archify 3.1.0 automáticamente y proyectan
-los flujos reconstruidos por Klap a diagramas `workflow`. Archify sólo renderiza:
-no analiza el repositorio ni participa del registro de proveedores. El paquete
-oficial se descarga desde el release fijado, se verifica con SHA-256 y se guarda
-en `.klap/renderer-runtime/archify`; requiere Node.js 18 o superior.
+```bash
+klap scope
+klap context "modificar autenticación" --json
+klap agent
+klap doctor --agent --probe-mcp
+```
 
-La sección **Flujos** del portal permite seleccionar el diagrama, revisar
-evidencia y limitaciones, y abrir cada HTML autocontenido con `file://`. Si Node,
-la descarga, la validación o el render fallan, el contexto y el resto del portal
-se generan igualmente y `archify-state.json` conserva el motivo. Para
-deshabilitarlo en el proyecto creá `.klap/archify.json` con
-`{"enabled": false}`. El mismo archivo acepta `max_flows`, `max_nodes`,
-`max_depth` y `timeout_seconds`.
+Se conserva el servidor MCP propio (`mcp_server.py`) y sus consultas de contexto,
+símbolos, definiciones, referencias, implementaciones, dependencias, impacto y
+flujos. Cada capacidad depende de los analizadores disponibles: devuelve
+`UNSUPPORTED`, `UNKNOWN` o errores explícitos cuando no puede resolverla, sin
+simular capacidades semánticas. No requiere ningún servidor semántico externo.
+Los ejemplos `.klap/mcp/` siguen destinados a Graphify; no modifican configuraciones
+globales de agentes.
 
-Los recorridos son relaciones reconstruidas por análisis estático; no son
-trazas observadas en producción. El IR se conserva junto al HTML para depurar y
-reproducir resultados. Archify se distribuye bajo licencia MIT; su runtime
-incluye `LICENSE` y `THIRD_PARTY_NOTICES.md` originales.
-
-`klap agent` genera ejemplos locales para Codex, Claude Code, Cursor y clientes
-MCP genéricos. No instala agentes ni modifica configuraciones globales. Usá
-`klap doctor --agent --probe-mcp` realiza un handshake MCP real, descubre tools
-y ejecuta una consulta mínima `graph_stats`; falla si alguna etapa no se puede
-comprobar.
-
-El servidor MCP propio de KlapContext expone además búsquedas de símbolos,
-definiciones, referencias, implementaciones, dependencias, impacto y
-flujos/endpoints. Así, un cliente sólo necesita conectarse a KlapContext; el
-adapter mantiene una sesión Serena reutilizable cuando está disponible. El
-portal HTML sigue siendo estático y muestra únicamente datos precompilados: no
-simula consultas semánticas dinámicas.
-
-Las afirmaciones incluyen evidencia y confianza. Las consultas de proveedores
-distinguen `OK`, `NO_RESULTS`, `UNSUPPORTED`, `PROVIDER_ERROR` y `UNKNOWN`; si
-KlapContext no puede determinar algo, lo expone en lugar de inventarlo. Ver
-[arquitectura y guía de adapters](docs/PROVIDERS.md).
+Ver [arquitectura](docs/ARCHITECTURE.md), [proveedores](docs/PROVIDERS.md) y
+[migración graph-first](docs/GRAPH_FIRST.md).
 
 ## Desarrollo
 
 ```bash
 python -m pip install -e ".[dev]"
 python -m pytest
+python -m build
 ```
 
-## Publicación
-
-El workflow de GitHub Actions publica tags `v*` mediante PyPI Trusted
-Publishing. Antes del primer tag, configurá el publisher de PyPI para este
-repositorio y workflow. No se necesitan tokens de PyPI en el repositorio.
-
-El repositorio ya incluye `.github/workflows/publish-pypi.yml`: al publicar un
-tag `vX.Y.Z`, GitHub construye el paquete y lo publica con ese publisher.
+La suite de navegador es opcional: `pip install playwright`, luego
+`python -m playwright install chromium` y `python -m pytest tests/test_portal_browser.py`.
+Usa HTML local y bloquea la red para comprobar que el portal es autónomo.
 
 ## Licencia
 
-Apache-2.0. Ver [LICENSE](LICENSE).
+Apache-2.0. Ver [LICENSE](LICENSE). El renderizador distribuido conserva su
+[licencia MIT](src/klapcontext/assets/vis-network.LICENSE).

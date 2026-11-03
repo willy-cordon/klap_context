@@ -63,21 +63,13 @@ def test_lumen_detection_and_route_adapter():
     ]
 
 
-def test_portal_has_dashboard_and_real_views(tmp_path):
-    context = build(fixture_repo(tmp_path), {"nodes": [{"name": "UserController", "path": "app/Http/UserController.php", "type": "controller"}]})
-    page = render_portal(context, render_agent(context), ["graph.html"])
+def test_portal_has_only_graph_home_and_git(tmp_path):
+    context = build(fixture_repo(tmp_path), {"nodes": []})
+    page = render_portal(context, render_agent(context), [])
     assert context["project"]["name"] in page
-    assert "Mapa del sistema" in page
-    assert "href='#flujos'" in page
-    assert "href='#evidencia'" in page
-    assert "id='flujos'" in page and "id='evidencia'" in page
-    assert "Copiar contexto" in page
-    assert "href='#entradas'" in page
-    assert "data-node=" in page or "map-empty" in page
-    assert "Reporte generado desde evidencia local" in page
-    assert "Charcoal + Cyan + Soft Gray" not in page
-    assert "KLAP_CONTEXT" not in page and "COPIAR CONTEXTO" in page
-    assert "--cyan:#00E5F0" in page and "data-help" in page
+    assert 'href="#inicio"' in page and 'href="#historial"' in page
+    assert 'Grafo de Graphify no disponible' in page
+    assert 'href="#evidencia"' not in page
 
 
 def test_agent_context_accepts_normalized_dependency_names(tmp_path):
@@ -104,7 +96,7 @@ def test_exclude_klap_is_idempotent(tmp_path, monkeypatch):
     exclude_klap(root)
     exclude_klap(root)
     assert (root / ".git" / "info" / "exclude").read_text().splitlines().count(".klap/") == 1
-    assert (root / ".git" / "info" / "exclude").read_text().splitlines().count(".serena/") == 1
+    assert (root / ".git" / "info" / "exclude").read_text().splitlines().count(".serena/") == 0
 
 
 def test_status_marks_matching_clean_context_current(tmp_path, monkeypatch, capsys):
@@ -150,7 +142,7 @@ def test_laravel_analysis_includes_versions_components_and_navigable_evidence(tm
     assert route["evidence"][0]["snippet"] == "Route::post('/orders', [OrderController::class, 'store']);"
     assert len(system["events"]) == 1 and len(system["listeners"]) == 1
     page = render_portal(context, render_agent(context), [])
-    assert "Laravel ^11.0" in page and "PHP ^8.2" in page
+    assert context["project"]["name"] in page
 
 
 def test_agent_planner_selects_only_change_capabilities_for_authentication():

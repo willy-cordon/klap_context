@@ -32,10 +32,10 @@ class GraphExplorationTests(unittest.TestCase):
             files = context["system_model"]["exploration"]["files"]
             self.assertEqual(files[0]["symbols"][0]["members"][0]["name"], "List")
             self.assertEqual(context["system_model"]["exploration"]["call_paths"][0]["steps"][1]["name"], "FindInfractions")
-            page = portal_render(context, agent_render(context), [])
+            page = portal_render(context, agent_render(context), [], graph=graph)
             self.assertIn("InfractionsController.cs", page)
             self.assertIn("FindInfractions", page)
-            self.assertIn("Archivos y símbolos", page)
+            self.assertIn('id="graph-data"', page)
             cache = root / ".klap"
             cache.mkdir()
             import json

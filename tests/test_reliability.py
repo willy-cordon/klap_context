@@ -154,7 +154,8 @@ def test_scope_preserves_fastapi_nest_and_dotnet_sources(tmp_path):
     assert NodeAdapter("NestJS", nest_scope).analyze(nest_root).entry_points
 
 
-def test_canonical_graph_generation_passes_scope_before_provider(tmp_path, monkeypatch):
+@pytest.mark.parametrize("update", [False, True])
+def test_canonical_graph_generation_passes_scope_before_provider(tmp_path, monkeypatch, update):
     (tmp_path / "app.py").write_text("def main(): pass")
     original_ignore = b"custom-generated/**\r\n"
     (tmp_path / ".graphifyignore").write_bytes(original_ignore)
@@ -173,10 +174,11 @@ def test_canonical_graph_generation_passes_scope_before_provider(tmp_path, monke
 
     monkeypatch.setattr("klapcontext.graphify.command_prefix", lambda: ["graphify"])
     monkeypatch.setattr("klapcontext.graphify.subprocess.run", fake_run)
-    result = generate_graph(tmp_path, scope=scope)
+    result = generate_graph(tmp_path, scope=scope, update=update)
     extract = commands[0]
     assert result == tmp_path / ".klap/graphify-out/graph.json"
     assert "--exclude" not in extract and "--out" in extract
+    assert "--no-cluster" in extract and "--code-only" in extract
     assert ignores and "**/vendor/**" in ignores[0] and "custom-generated/**" in ignores[0]
     assert (tmp_path / ".graphifyignore").read_bytes() == original_ignore
     assert not (tmp_path / "graphify-out/graph.json").exists()
