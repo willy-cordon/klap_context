@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 
 from klapcontext import cli
@@ -281,9 +282,25 @@ def test_impact_connects_structural_callers_with_generic_flow():
     assert result["direct_callers"] and "potencialmente afectados" in result["statement"]
 
 
-def test_git_intelligence_reports_current_repository_state():
-    result = intelligence(Path(__file__).parent.parent)
-    assert result["branch"] and result["commit"] and isinstance(result["recent_changes"], list)
+def test_git_intelligence_reports_current_repository_state(tmp_path):
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=tmp_path, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    git("init", "-b", "main")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com",
+        "commit", "--allow-empty", "-m", "Initial commit")
+    head = git("rev-parse", "HEAD")
+    result = intelligence(tmp_path)
+    assert result["branch"] == "main"
+    assert result["commit"] == head
+    assert result["recent_changes"][0]["commit"] == head
+
+    git("checkout", "--detach", "HEAD")
+    detached = intelligence(tmp_path)
+    assert detached["branch"] == ""
+    assert detached["commit"] == head
+    assert detached["recent_changes"] == result["recent_changes"]
 
 
 def test_sanitization_removes_secret_values_from_context():
