@@ -24,10 +24,12 @@ def test_local_portal_without_network(tmp_path):
         page.wait_for_selector('canvas')
         assert page.locator('nav a').all_text_contents() == ['Inicio', 'Git']
         assert 'Vista parcial: 350 de 420' in page.locator('#hint').inner_text()
+        assert page.evaluate("testNetwork.body.data.nodes.get('0').font.size") == 0
         page.locator('#search').fill('component_419')
         page.locator('#results button').click()
         assert 'component_419' in page.locator('#selection').inner_text()
         assert 'src/419.py' in page.locator('#selection').inner_text()
+        assert page.evaluate("testNetwork.body.data.nodes.get('419').font.size") == 13
         assert page.evaluate('testNetwork.body.data.nodes.getIds().sort()') == ['418', '419']
         assert page.evaluate('testNetwork.body.data.edges.get().map(e => [e.from, e.to])') == [['418', '419']]
         assert page.evaluate('testNetwork.getSelectedNodes()') == ['419']

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.2 — 2026-11-04 — Legible graph overview
+
+- Organizes the initial graph layout and colors from real source-path modules.
+- Hides labels until zooming in, selecting a node, or searching it, avoiding an
+  unreadable initial view on large repositories.
+
 ## 0.11.1 — 2026-11-04 — Windows Graphify runtime
 
 - Upgrades the managed Graphify runtime to 0.9.102 and replaces older 0.9.x
