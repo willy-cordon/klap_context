@@ -178,7 +178,7 @@ def test_canonical_graph_generation_passes_scope_before_provider(tmp_path, monke
     extract = commands[0]
     assert result == tmp_path / ".klap/graphify-out/graph.json"
     assert "--exclude" not in extract and "--out" in extract
-    assert "--no-cluster" in extract and "--code-only" in extract
+    assert "--no-cluster" not in extract and "--code-only" in extract
     assert ignores and "**/vendor/**" in ignores[0] and "custom-generated/**" in ignores[0]
     assert (tmp_path / ".graphifyignore").read_bytes() == original_ignore
     assert not (tmp_path / "graphify-out/graph.json").exists()

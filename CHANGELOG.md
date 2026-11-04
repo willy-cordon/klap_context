@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.3 — 2026-11-04 — Native Graphify portal
+
+- Restores Graphify community clustering and its native colored graph view for
+  both `.klap/index.html` and `.klap/graphify-out/graph.html`.
+- Excludes unresolved external nodes from the visual graph while preserving the
+  canonical graph for MCP and technical analysis.
+
 ## 0.11.2 — 2026-11-04 — Legible graph overview
 
 - Organizes the initial graph layout and colors from real source-path modules.

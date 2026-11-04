@@ -34,22 +34,19 @@ muestra su indisponibilidad y el resto del contexto continúa disponible.
 
 - Las relaciones son evidencia estática, no ejecución observada. Identificadores
   ausentes/duplicados y aristas sin extremos válidos no se dibujan.
-- Máximo de 350 nodos visibles por vista para controlar el costo del layout;
-  búsqueda global y enfoque permiten explorar el resto. La vista parcial se
-  etiqueta explícitamente; no se agregan relaciones entre grupos ficticios.
-- Todo el grafo normalizado se incluye en el HTML. Grafos extremadamente grandes
-  todavía tienen un costo de carga/memoria proporcional al total de registros.
+- El portal conserva el layout y las comunidades producidas por Graphify. Para
+  evitar ruido visual, omite únicamente nodos externos sin archivo fuente; el
+  grafo canónico completo sigue disponible para MCP y análisis técnico.
+- Grafos extremadamente grandes todavía tienen un costo de carga/memoria
+  proporcional al total de registros mostrados.
 - No hay un LSP externo: las operaciones no soportadas por los analizadores
   existentes se declaran como tales.
-- El portal usa vis-network 9.1.6, la misma versión del exportador Graphify
-  inspeccionado. Se conserva localmente para no depender de un CDN. Su SHA-384
-  coincide con el SRI del exportador:
+- El portal integra el HTML nativo de Graphify y sustituye su carga CDN de
+  vis-network 9.1.6 por una copia local. Su SHA-384 coincide con el SRI del
+  exportador:
   `Ux6phic9PEHJ38YtrijhkzyJ8yQlH8i/+buBR8s3mAZOJrP1gwyvAcIYl3GWtpX1`.
-- Las exportaciones originales de Graphify se preservan y pueden seguir usando
-  CDN; el portal principal de KlapContext no depende de ellas.
-
-- `init` y `update` usan `extract --code-only --no-cluster`: el portal consume
-  relaciones AST, no comunidades.
+- `init` y `update` usan `extract --code-only` con comunidades habilitadas;
+  no se agregan ni se modifican relaciones para mejorar el diseño.
 - Graphify se administra a partir de la versión 0.9.102. Los runtimes
   anteriores se reemplazan automáticamente en el siguiente `init` o `update`;
   si la extracción falla, KlapContext declara el fallo y activa el fallback,

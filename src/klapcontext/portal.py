@@ -88,5 +88,28 @@ window.addEventListener('hashchange',showPage);showPage();
 <main><section id="inicio" aria-label="Explorar proyecto">{content}</section><section id="historial" hidden><h2>Historial Git</h2><ul>{recent}</ul></section></main>{scripts}{navigation}</body></html>'''
 
 
-def write(context: dict, agent_text: str, graphify_files: list[str], output: Path, *, graph: dict | None = None) -> None:
-    output.write_text(render(context, agent_text, graphify_files, graph=graph), encoding="utf-8")
+def native_graphify_portal(graph_html: Path) -> str | None:
+    """Return Graphify's own visualizer with its pinned renderer inlined.
+
+    Graphify supplies the graph layout, community controls and inspection UI.
+    Bundling vis-network keeps `klap open` usable from ``file://`` without a
+    network request, while leaving Graphify's generated structure untouched.
+    """
+    try:
+        page = graph_html.read_text(encoding="utf-8")
+        library = Path(__file__).with_name("assets").joinpath("vis-network.min.js").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    marker = '<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"'
+    start = page.find(marker)
+    if start < 0:
+        return None
+    end = page.find("</script>", start)
+    if end < 0:
+        return None
+    return page[:start] + f"<script>{library}</script>" + page[end + len("</script>"):]
+
+
+def write(context: dict, agent_text: str, graphify_files: list[str], output: Path, *, graph: dict | None = None, graph_html: Path | None = None) -> None:
+    native = native_graphify_portal(graph_html) if graph_html is not None else None
+    output.write_text(native if native is not None else render(context, agent_text, graphify_files, graph=graph), encoding="utf-8")

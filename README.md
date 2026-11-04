@@ -37,26 +37,14 @@ También podés deshabilitar Graphify persistentemente en `.klap/providers.json`
 
 ## Portal local
 
-El menú contiene únicamente **Inicio** y **Git**. Inicio muestra el nombre real
-del proyecto y un lienzo de grafo a pantalla completa, sin tarjetas de métricas.
+`.klap/index.html` distribuye el visualizador nativo de Graphify: comunidades
+coloreadas, búsqueda, selección e inspección de nodos. Es el mismo mapa que
+`.klap/graphify-out/graph.html`, con `vis-network 9.1.6` embebido para abrirlo
+sin CDN ni servidor con `file://`.
 
-- Rueda: zoom. Arrastre del fondo: desplazamiento. Arrastre de nodo: posición.
-- Selección: nombre, tipo, archivo/línea cuando existen y relaciones resaltadas.
-- Buscar: archivos o símbolos de todo el grafo, incluso fuera de la vista actual.
-- Conexiones: enfocar los vecinos reales del nodo seleccionado.
-- Ajustar y Ver todo: reencuadrar o volver a la vista inicial.
-- Git: historial de cambios reciente, como en la versión anterior.
-
-El HTML incluye los datos y el mismo motor de visualización que Graphify
-(vis-network 9.1.6, licencia MIT), sin CDN, servidor ni solicitudes de red.
-Podés abrir `.klap/index.html` directamente con `file://` o copiar ese único
-archivo a otra máquina. No se agregan relaciones para mejorar el diseño.
-
-En grafos grandes, la vista inicial muestra como máximo 350 nodos ordenados por
-grado y lo indica como vista parcial. La búsqueda sigue cubriendo todos los
-nodos; el enfoque muestra hasta 349 vecinos. Las conexiones dibujadas son
-exclusivamente las del grafo original cuyos extremos están visibles. No es un
-trazado de ejecución ni garantiza resolver llamadas dinámicas.
+La vista humana omite nodos externos sin archivo fuente (por ejemplo símbolos
+no resueltos de dependencias); el grafo canónico completo se preserva para MCP
+y análisis técnico. No se agregan relaciones ni se infiere una ejecución.
 
 ## Contexto para agentes
 

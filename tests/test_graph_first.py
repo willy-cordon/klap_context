@@ -8,7 +8,8 @@ from pathlib import Path
 import pytest
 
 from klapcontext import cli
-from klapcontext.portal import graph_data, render
+from klapcontext.graphify import canonical_graph, portal_graph
+from klapcontext.portal import graph_data, render, write
 from klapcontext.providers.lifecycle import ProviderLifecycle, ProviderRuntime
 from klapcontext.providers.services import default_registry
 
@@ -105,3 +106,27 @@ def test_graphify_ast_metadata_is_preserved():
     assert data['nodes'][0]['kind'] == 'code'
     assert data['nodes'][0]['line'] == 'L12-L19'
     assert data['nodes'][0]['path'] == 'parser.py'
+
+
+def test_native_graphify_portal_is_used_and_self_contained(tmp_path):
+    graph_html = tmp_path / 'graph.html'
+    graph_html.write_text('<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js" integrity="fixed"></script><main>Graphify native</main>', encoding='utf-8')
+    output = tmp_path / 'index.html'
+    write({'project': {'name': 'fixture'}}, '', [], output, graph=graph_fixture(), graph_html=graph_html)
+    page = output.read_text(encoding='utf-8')
+    assert 'Graphify native' in page
+    assert 'https://unpkg.com' not in page
+    assert 'vis-network' in page
+
+
+def test_portal_graph_omits_unresolved_external_nodes_without_touching_canonical_graph(tmp_path):
+    graph = canonical_graph(tmp_path)
+    graph.parent.mkdir(parents=True)
+    graph.write_text(json.dumps({'nodes': [
+        {'id': 'local', 'source_file': 'app/Service.php', 'community': 1},
+        {'id': 'external', 'label': 'vendor/package'},
+    ], 'links': [{'source': 'local', 'target': 'external'}, {'source': 'local', 'target': 'local'}]}), encoding='utf-8')
+    visual = json.loads(portal_graph(tmp_path, graph).read_text(encoding='utf-8'))
+    assert [node['id'] for node in visual['nodes']] == ['local']
+    assert visual['links'] == [{'source': 'local', 'target': 'local'}]
+    assert json.loads(graph.read_text(encoding='utf-8'))['nodes'][1]['id'] == 'external'

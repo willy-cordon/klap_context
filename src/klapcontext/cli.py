@@ -52,7 +52,8 @@ def generate_all(root: Path, update: bool = False, *, shared: bool = False, allo
     setup = AgentInstructionsManager(root).apply(context, shared=shared, allow_tracked=allow_tracked_agents)
     context["agent_onboarding"] = {**setup.as_dict(), "mcp": mcp}
     (klap / "context.json").write_text(json.dumps(context, indent=2) + "\n", encoding="utf-8")
-    write_portal(context, agent, files, klap / "index.html", graph=graph_result.data if graphify_ready else None)
+    graph_html = klap / "graphify-out" / "graph.html" if graphify_ready else None
+    write_portal(context, agent, files, klap / "index.html", graph=graph_result.data if graphify_ready else None, graph_html=graph_html)
     state = {
         "schema_version": "0.3",
         "generated_at": datetime.now(timezone.utc).isoformat(),

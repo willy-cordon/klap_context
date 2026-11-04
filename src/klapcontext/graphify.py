@@ -86,6 +86,45 @@ def canonical_graph(root: Path) -> Path:
     return canonical_directory(root) / "graph.json"
 
 
+def portal_graph(root: Path, graph: Path) -> Path:
+    """Create a visual-only Graphify input without unresolved external nodes.
+
+    The canonical graph remains untouched for MCP and technical artifacts.
+    Graphify adds nodes without a repository source path for unresolved package
+    symbols; they are useful evidence in the raw graph but overwhelm a human
+    project map.  The portal keeps only repository-backed nodes and edges.
+    """
+    payload = json.loads(graph.read_text(encoding="utf-8"))
+    nodes = payload.get("nodes") if isinstance(payload, dict) else None
+    if not isinstance(nodes, list):
+        raise GraphifyError("Graphify created an invalid graph nodes collection")
+    included = {
+        str(node.get("id"))
+        for node in nodes
+        if isinstance(node, dict) and node.get("id") is not None
+        and str(node.get("source_file") or node.get("file") or node.get("path") or "").strip()
+    }
+
+    def endpoint(edge: dict, name: str) -> str | None:
+        value = edge.get(name)
+        value = value.get("id") if isinstance(value, dict) else value
+        return str(value) if value is not None else None
+
+    visual = dict(payload)
+    visual["nodes"] = [node for node in nodes if isinstance(node, dict) and str(node.get("id")) in included]
+    for field in ("links", "edges"):
+        records = payload.get(field)
+        if isinstance(records, list):
+            visual[field] = [edge for edge in records if isinstance(edge, dict) and endpoint(edge, "source") in included and endpoint(edge, "target") in included]
+    # Keep the render input beside Graphify's canonical artifacts.  Exporting
+    # it therefore refreshes `.klap/graphify-out/graph.html`, the same native
+    # artifact users open directly.
+    destination = canonical_directory(root) / "portal-graph.json"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(visual, ensure_ascii=False), encoding="utf-8")
+    return destination
+
+
 def legacy_graphs(root: Path) -> list[str]:
     canonical = canonical_graph(root).resolve()
     paths = [root / "graphify-out" / "graph.json", root / ".klap" / "graphify" / "graph.json"]
@@ -144,10 +183,10 @@ def generate(root: Path, update: bool = False, scope: IndexScope | None = None) 
     # Graphify's supported --out writes one graphify-out directory beneath the
     # selected parent. The temporary ignore file applies central scope before
     # AST extraction while remaining compatible across supported releases.
-    # Both init and update need canonical AST facts, not community clustering.
-    # Clustering is unused by the portal. Normal extract still reuses/prunes
-    # the manifest cache while preserving actual nodes and relations.
-    command = [*prefix, "extract", str(root), "--code-only", "--no-cluster", "--out", str(output_parent)]
+    # Keep Graphify's community detection enabled.  Its native graph.html
+    # uses those communities to provide the navigable, colored topology that
+    # users see through `klap open`.
+    command = [*prefix, "extract", str(root), "--code-only", "--out", str(output_parent)]
     try:
         with _scoped_graphifyignore(root, scope):
             result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=120)
@@ -163,10 +202,13 @@ def generate(root: Path, update: bool = False, scope: IndexScope | None = None) 
         raise GraphifyError(f"Graphify created an invalid graph: {error}") from error
     if not isinstance(payload, dict):
         raise GraphifyError("Graphify created an invalid graph object")
+    visual_graph = portal_graph(root, graph)
     # Visualization exporters consume the exact canonical graph. Failures do
-    # not invalidate the graph itself, but are reflected by missing artifacts.
+    # not invalidate the graph itself.  The filtered visual graph refreshes
+    # Graphify's own graph.html, so direct and Klap portal views stay aligned.
     try:
         subprocess.run(prefix + ["export", "html", "--graph", str(graph)], cwd=root, text=True, capture_output=True, timeout=30)
+        subprocess.run(prefix + ["export", "html", "--graph", str(visual_graph)], cwd=root, text=True, capture_output=True, timeout=30)
         subprocess.run(prefix + ["export", "callflow-html", str(graph)], cwd=root, text=True, capture_output=True, timeout=30)
     except subprocess.TimeoutExpired:
         pass
