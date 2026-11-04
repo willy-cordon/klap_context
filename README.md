@@ -16,7 +16,7 @@ klap init
 klap open
 ```
 
-El primer `init` prepara Graphify 0.9.66 en un entorno aislado bajo
+El primer `init` prepara Graphify 0.9.102 en un entorno aislado bajo
 `.klap/provider-runtime/` si no existe una instalación compatible. No modifica
 el Python global ni PATH. Una falla de instalación o extracción se informa;
 los analizadores nativos siguen generando contexto, sin presentar su salida

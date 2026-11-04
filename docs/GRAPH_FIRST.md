@@ -50,7 +50,7 @@ muestra su indisponibilidad y el resto del contexto continúa disponible.
 
 - `init` y `update` usan `extract --code-only --no-cluster`: el portal consume
   relaciones AST, no comunidades.
-- En Windows se observó un fallo nativo intermitente de Graphify 0.9.66
-  (exit 3221225477), incluso sin clustering. Una ejecución posterior de
-  `init` y `update` funcionó. El fallo se declara y activa el fallback;
-  no se presenta un grafo viejo como nuevo ni se reintenta silenciosamente.
+- Graphify se administra a partir de la versión 0.9.102. Los runtimes
+  anteriores se reemplazan automáticamente en el siguiente `init` o `update`;
+  si la extracción falla, KlapContext declara el fallo y activa el fallback,
+  sin presentar un grafo viejo como nuevo.

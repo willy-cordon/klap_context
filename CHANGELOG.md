@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.1 — 2026-11-04 — Windows Graphify runtime
+
+- Upgrades the managed Graphify runtime to 0.9.102 and replaces older 0.9.x
+  project runtimes on the next `klap init` or `klap update`, avoiding the
+  intermittent Windows extraction crash reported by Graphify 0.9.66.
+
 ## 0.11.0 — 2026-11-03 — Graph-first portal
 
 - Adds a standalone offline Graphify graph with search, selection, zoom, pan,

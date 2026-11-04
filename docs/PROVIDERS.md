@@ -23,7 +23,7 @@ adapters Graphify | analizadores nativos | adapters externos
 
 `providers/lifecycle.py` prepara los binarios estándar antes de componer el
 registry, pero no participa en la resolución de capacidades. Usa entornos
-aislados por proyecto en `.klap/provider-runtime/`, con Graphify `0.9.66`,
+aislados por proyecto en `.klap/provider-runtime/`, con Graphify `0.9.102`,
 como único runtime externo administrado. El estado
 reproducible queda en
 `.klap/provider-state.json`: versión requerida/instalada, origen, ejecutable,

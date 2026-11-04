@@ -41,11 +41,21 @@ def test_failed_managed_install_is_reported_and_does_not_raise(tmp_path, monkeyp
 def test_compatible_existing_provider_is_not_reinstalled(tmp_path, monkeypatch):
     lifecycle = ProviderLifecycle(tmp_path)
     monkeypatch.setattr("klapcontext.providers.lifecycle.shutil.which", lambda command: f"/tools/{command}")
-    monkeypatch.setattr("klapcontext.providers.lifecycle._version", lambda *_: "0.9.66")
+    monkeypatch.setattr("klapcontext.providers.lifecycle._version", lambda *_: "0.9.102")
     monkeypatch.setattr(lifecycle, "_graphify_healthy", lambda _: True)
     monkeypatch.setattr(lifecycle, "_install", lambda *_: (_ for _ in ()).throw(AssertionError("must not reinstall")))
     result = lifecycle._ensure("graphify", GRAPHIFY, skip=False, repair=False)
     assert result.state == "READY" and result.source == "system"
+
+
+def test_older_graphify_patch_is_replaced(tmp_path, monkeypatch):
+    lifecycle = ProviderLifecycle(tmp_path)
+    monkeypatch.setattr("klapcontext.providers.lifecycle.shutil.which", lambda command: f"/tools/{command}")
+    monkeypatch.setattr("klapcontext.providers.lifecycle._version", lambda *_: "0.9.66")
+    expected = ProviderRuntime("graphify", GRAPHIFY["version"], "READY", GRAPHIFY["version"], "managed")
+    monkeypatch.setattr(lifecycle, "_install", lambda *_: expected)
+    result = lifecycle._ensure("graphify", GRAPHIFY, skip=False, repair=False)
+    assert result is expected
 
 
 def test_provider_install_has_a_longer_timeout_than_interactive_checks(tmp_path):

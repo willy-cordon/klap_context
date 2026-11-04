@@ -16,8 +16,8 @@ classifiers = ["Development Status :: 3 - Alpha", "Intended Audience :: Develope
 dependencies = ["tree-sitter>=0.24,<0.26", "tree-sitter-php>=0.24,<0.25", "tree-sitter-javascript>=0.23,<0.26", "tree-sitter-typescript>=0.23,<0.26", "mcp>=1.0,<2"]
 
 [project.optional-dependencies]
-graphify = ["graphifyy>=0.9.66"]
-all = ["graphifyy>=0.9.66"]
+graphify = ["graphifyy>=0.9.102"]
+all = ["graphifyy>=0.9.102"]
 dev = ["build>=1.2", "pytest>=8", "twine>=6"]
 
 [project.urls]

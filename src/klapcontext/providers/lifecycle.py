@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import Any
 
 
-GRAPHIFY = {"package": "graphifyy", "version": "0.9.66", "command": "graphify", "series": (0, 9)}
+# 0.9.66 intermittently terminates with STATUS_ACCESS_VIOLATION (3221225477)
+# during extraction on Windows.  Keep the managed provider on a newer patch
+# release and treat older patches as incompatible so existing project runtimes
+# are replaced on the next init/update instead of remaining pinned to 0.9.66.
+GRAPHIFY = {"package": "graphifyy", "version": "0.9.102", "command": "graphify", "series": (0, 9)}
 TIMEOUT_SECONDS = 120
 INSTALL_TIMEOUT_SECONDS = 600
 
@@ -90,8 +94,12 @@ def _version(command: str, root: Path) -> str | None:
 def _compatible(value: str | None, spec: dict[str, Any]) -> bool:
     if not value:
         return False
-    parts = tuple(int(item) for item in value.split(".")[:2] if item.isdigit())
-    return parts == spec["series"]
+    try:
+        parts = tuple(int(item) for item in value.split("."))
+        required = tuple(int(item) for item in spec["version"].split("."))
+    except (AttributeError, ValueError):
+        return False
+    return parts[:2] == spec["series"] and parts >= required
 
 
 class ProviderLifecycle:
